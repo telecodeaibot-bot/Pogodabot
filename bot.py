@@ -35,54 +35,60 @@ AFFILIATE = {
 }
 
 # ── WEATHER MOOD ─────────────────────────────────────────────────────────────
+# Коды снега/льда WeatherAPI
+SNOW_CODES = {1066, 1114, 1117, 1210, 1213, 1216, 1219, 1222, 1225, 1255, 1258,
+              1069, 1072, 1168, 1171, 1198, 1201, 1204, 1207, 1249, 1252}
+# Коды дождя WeatherAPI
+RAIN_CODES = {1063, 1150, 1153, 1180, 1183, 1186, 1189, 1192, 1195, 1240, 1243,
+              1246, 1087, 1273, 1276, 1279, 1282}
+# Коды грозы
+STORM_CODES = {1087, 1273, 1276, 1279, 1282}
+
 def get_mood(code: int, temp: float, lang: str) -> str:
-    """Эмоциональная подача прогноза"""
+    """Эмоциональная подача — определяем по коду И температуре"""
+    is_snow = code in SNOW_CODES and temp <= 4
+    is_rain = code in RAIN_CODES
+    is_storm = code in STORM_CODES
+    is_fog = code in (1030, 1135, 1147)
+
     if lang == "ru":
-        if code == 1000 and temp >= 25:
-            return "☀️ <i>Отличный день для прогулки или пикника — солнце и тепло зовут на улицу!</i>"
-        elif code == 1000 and temp >= 15:
-            return "🌤 <i>Приятная погода — свежий воздух и солнышко. Идеально для активного дня!</i>"
-        elif code == 1000 and temp < 5:
-            return "🧣 <i>Солнечно, но морозно — одевайся теплее и наслаждайся зимним днём!</i>"
-        elif code in (1003, 1006):
-            return "⛅ <i>Облачно, но без дождя — хорошее время для прогулки в парке.</i>"
-        elif code in range(1063, 1200):
-            return "🌧 <i>Дождливый день — идеально для чашки чая, любимой книги или сериала дома.</i>"
-        elif code in range(1200, 1250):
-            return "❄️ <i>Снег за окном — укутайся потеплее, и пусть этот день будет уютным!</i>"
-        elif code in (1087, 1273, 1276, 1279, 1282):
+        if is_storm:
             return "⛈ <i>Гроза! Лучше остаться дома — безопасность прежде всего.</i>"
-        elif code in (1030, 1135, 1147):
+        elif is_snow:
+            return "❄️ <i>Снег за окном — укутайся потеплее, и пусть этот день будет уютным!</i>"
+        elif is_rain:
+            return "🌧 <i>Дождливый день — идеально для чашки чая, любимой книги или сериала дома.</i>"
+        elif is_fog:
             return "🌫 <i>Туман на улице — будь осторожен на дороге и не торопись.</i>"
-        elif temp < 0:
-            return "🥶 <i>Очень холодно! Одевайся по-зимнему и не забудь перчатки.</i>"
         elif temp >= 30:
             return "🥵 <i>Жара! Пей больше воды, носи лёгкую одежду и береги себя.</i>"
+        elif temp >= 20:
+            return "☀️ <i>Отличный день для прогулки или пикника — солнце и тепло зовут на улицу!</i>"
+        elif temp >= 10:
+            return "🌤 <i>Приятная погода — свежий воздух. Идеально для активного дня!</i>"
+        elif temp >= 0:
+            return "🧣 <i>Прохладно — одевайся потеплее и наслаждайся осенним/весенним днём!</i>"
         else:
-            return "🌡 <i>Обычный день — одевайся по погоде и проведи его хорошо!</i>"
+            return "🥶 <i>Очень холодно! Одевайся по-зимнему и не забудь перчатки.</i>"
     else:
-        if code == 1000 and temp >= 25:
-            return "☀️ <i>Perfect day for a walk or picnic — sunshine and warmth await!</i>"
-        elif code == 1000 and temp >= 15:
-            return "🌤 <i>Pleasant weather — fresh air and sunshine. Great for an active day!</i>"
-        elif code == 1000 and temp < 5:
-            return "🧣 <i>Sunny but cold — dress warmly and enjoy the crisp winter day!</i>"
-        elif code in (1003, 1006):
-            return "⛅ <i>Cloudy but dry — a good time for a walk in the park.</i>"
-        elif code in range(1063, 1200):
-            return "🌧 <i>Rainy day — perfect for a cup of tea, a good book or binge-watching at home.</i>"
-        elif code in range(1200, 1250):
-            return "❄️ <i>Snow outside — wrap up warm and make it a cozy day!</i>"
-        elif code in (1087, 1273, 1276, 1279, 1282):
+        if is_storm:
             return "⛈ <i>Thunderstorm! Better stay home — safety first.</i>"
-        elif code in (1030, 1135, 1147):
+        elif is_snow:
+            return "❄️ <i>Snow outside — wrap up warm and make it a cozy day!</i>"
+        elif is_rain:
+            return "🌧 <i>Rainy day — perfect for a cup of tea, a good book or binge-watching at home.</i>"
+        elif is_fog:
             return "🌫 <i>Foggy outside — be careful on the road and take it slow.</i>"
-        elif temp < 0:
-            return "🥶 <i>Freezing cold! Dress in winter gear and don't forget gloves.</i>"
         elif temp >= 30:
             return "🥵 <i>Heat wave! Drink plenty of water, wear light clothes and stay safe.</i>"
+        elif temp >= 20:
+            return "☀️ <i>Perfect day for a walk or picnic — sunshine and warmth await!</i>"
+        elif temp >= 10:
+            return "🌤 <i>Pleasant weather — fresh air. Great for an active day!</i>"
+        elif temp >= 0:
+            return "🧣 <i>Cool outside — dress warmly and enjoy the day!</i>"
         else:
-            return "🌡 <i>An ordinary day — dress for the weather and make it great!</i>"
+            return "🥶 <i>Freezing cold! Dress in winter gear and don't forget gloves.</i>"
 
 # ── WEATHER ICONS ─────────────────────────────────────────────────────────────
 def weather_icon(code: int) -> str:
@@ -171,7 +177,7 @@ async def get_all_active_users():
 
 # ── WEATHER API ───────────────────────────────────────────────────────────────
 async def fetch_weather(city: str, days: int = 7):
-    url = f"https://api.weatherapi.com/v1/forecast.json?key={WEATHER_API_KEY}&q={city}&days={days}&lang=ru"
+    url = f"https://api.weatherapi.com/v1/forecast.json?key={WEATHER_API_KEY}&q={city}&days={days}&lang=ru&aqi=yes"
     async with aiohttp.ClientSession() as session:
         try:
             async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
@@ -206,6 +212,12 @@ def format_day_forecast(data: dict, lang: str) -> str:
     desc = c["condition"]["text"]
     humidity = c["humidity"]
     wind = round(c["wind_kph"])
+    wind_dir = c.get("wind_dir", "")
+    visibility = c.get("vis_km", "—")
+    pressure = round(c.get("pressure_mb", 0))
+    uv = c.get("uv", "—")
+    air_quality = c.get("air_quality", {})
+    aqi = round(air_quality.get("us-epa-index", 0)) if air_quality else "—"
     today = data["forecast"]["forecastday"][0]["day"]
     t_max = round(today["maxtemp_c"])
     t_min = round(today["mintemp_c"])
@@ -213,6 +225,23 @@ def format_day_forecast(data: dict, lang: str) -> str:
     city_name = loc["name"]
     country = loc["country"]
     mood = get_mood(c["condition"]["code"], temp, lang)
+
+    # УФ уровень
+    def uv_label(val, lang):
+        try:
+            v = float(val)
+        except:
+            return str(val)
+        if lang == "ru":
+            if v <= 2: return f"{val} (Низкий)"
+            elif v <= 5: return f"{val} (Умеренный)"
+            elif v <= 7: return f"{val} (Высокий)"
+            else: return f"{val} (Очень высокий)"
+        else:
+            if v <= 2: return f"{val} (Low)"
+            elif v <= 5: return f"{val} (Moderate)"
+            elif v <= 7: return f"{val} (High)"
+            else: return f"{val} (Very High)"
 
     if lang == "ru":
         return (
@@ -223,8 +252,11 @@ def format_day_forecast(data: dict, lang: str) -> str:
             f"📊 <b>День/Ночь:</b> {t_max}°C / {t_min}°C\n"
             f"🌥 <b>Состояние:</b> {desc}\n"
             f"💧 <b>Влажность:</b> {humidity}%\n"
-            f"💨 <b>Ветер:</b> {wind} км/ч\n"
-            f"🌂 <b>Вероятность дождя:</b> {rain_chance}%"
+            f"💨 <b>Ветер:</b> {wind} км/ч {wind_dir}\n"
+            f"🌂 <b>Вероятность дождя:</b> {rain_chance}%\n"
+            f"👁 <b>Видимость:</b> {visibility} км\n"
+            f"🔵 <b>Давление:</b> {round(pressure * 0.750062)} мм рт.ст.\n"
+            f"🌞 <b>УФ-индекс:</b> {uv_label(uv, 'ru')}"
         )
     else:
         return (
@@ -235,8 +267,11 @@ def format_day_forecast(data: dict, lang: str) -> str:
             f"📊 <b>Day/Night:</b> {t_max}°C / {t_min}°C\n"
             f"🌥 <b>Condition:</b> {desc}\n"
             f"💧 <b>Humidity:</b> {humidity}%\n"
-            f"💨 <b>Wind:</b> {wind} km/h\n"
-            f"🌂 <b>Rain chance:</b> {rain_chance}%"
+            f"💨 <b>Wind:</b> {wind} km/h {wind_dir}\n"
+            f"🌂 <b>Rain chance:</b> {rain_chance}%\n"
+            f"👁 <b>Visibility:</b> {visibility} km\n"
+            f"🔵 <b>Pressure:</b> {pressure} hPa\n"
+            f"🌞 <b>UV index:</b> {uv_label(uv, 'en')}"
         )
 
 def format_week_forecast(data: dict, lang: str) -> str:
