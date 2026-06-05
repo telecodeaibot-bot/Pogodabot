@@ -4,6 +4,7 @@ import aiohttp
 import aiosqlite
 from datetime import datetime, time
 from aiogram import Bot, Dispatcher, F
+from aiogram.client.default import DefaultBotProperties
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
@@ -293,7 +294,7 @@ class CityForm(StatesGroup):
     waiting_city = State()
 
 # ── BOT + DISPATCHER ──────────────────────────────────────────────────────────
-bot = Bot(token=BOT_TOKEN, parse_mode="HTML")
+bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
 dp = Dispatcher(storage=MemoryStorage())
 
 # ── HANDLERS ──────────────────────────────────────────────────────────────────
