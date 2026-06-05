@@ -25,13 +25,18 @@ WEATHER_API_KEY = os.getenv("WEATHER_API_KEY", "ade7a2b019c6498a8da62549260506")
 DB_PATH = "pogoda.db"
 
 # ── AFFILIATE LINKS ──────────────────────────────────────────────────────────
+# 👇 ЗАМЕНИ URL на свои партнёрские ссылки когда получишь их в Admitad или другой CPA сети
 AFFILIATE = {
-    "bolt":    {"ru": "🚗 Заказать такси Bolt",   "en": "🚗 Order Bolt taxi",      "url": "https://invite.bolt.eu/POGODA"},
-    "inDrive": {"ru": "🚕 Заказать inDrive",       "en": "🚕 Order inDrive",        "url": "https://indrive.com/promo/pogoda"},
-    "wolt":    {"ru": "🍔 Доставка еды Wolt",      "en": "🍔 Food delivery Wolt",   "url": "https://wolt.com"},
-    "glovo":   {"ru": "🛵 Доставка Glovo",         "en": "🛵 Glovo delivery",       "url": "https://glovoapp.com"},
-    "clothes": {"ru": "👗 Одежда по погоде",       "en": "👗 Clothes for weather",  "url": "https://www.lamoda.ru"},
-    "aliexpress": {"ru": "🛍 Что делать в дождь?", "en": "🛍 Rainy day ideas",      "url": "https://www.aliexpress.com"},
+    "bolt":       {"ru": "🚗 Заказать такси Bolt",        "en": "🚗 Order Bolt taxi",         "url": "ВСТАВЬ_ССЫЛКУ_BOLT"},
+    "inDrive":    {"ru": "🚕 Заказать inDrive",            "en": "🚕 Order inDrive",           "url": "ВСТАВЬ_ССЫЛКУ_INDRIVE"},
+    "wolt":       {"ru": "🍔 Доставка еды Wolt",           "en": "🍔 Food delivery Wolt",      "url": "ВСТАВЬ_ССЫЛКУ_WOLT"},
+    "glovo":      {"ru": "🛵 Доставка Glovo",              "en": "🛵 Glovo delivery",          "url": "ВСТАВЬ_ССЫЛКУ_GLOVO"},
+    "clothes":    {"ru": "👗 Одежда по погоде",            "en": "👗 Clothes for weather",     "url": "ВСТАВЬ_ССЫЛКУ_ОДЕЖДА"},
+    "rainy_ideas":{"ru": "🛍 Идеи для дождливого дня",    "en": "🛍 Rainy day ideas",         "url": "ВСТАВЬ_ССЫЛКУ_ALIEXPRESS"},
+    "tickets":    {"ru": "✈️ Дешёвые авиабилеты",         "en": "✈️ Cheap flights",           "url": "ВСТАВЬ_ССЫЛКУ_AVIASALES"},
+    "hotels":     {"ru": "🏨 Найти отель",                 "en": "🏨 Find a hotel",            "url": "ВСТАВЬ_ССЫЛКУ_BOOKING"},
+    "umbrella":   {"ru": "☂️ Товары для дождя",           "en": "☂️ Rain essentials",         "url": "ВСТАВЬ_ССЫЛКУ_ЗОНТЫ"},
+    "warm":       {"ru": "🧥 Тёплая одежда",              "en": "🧥 Warm clothes",            "url": "ВСТАВЬ_ССЫЛКУ_ТЁПЛОЕ"},
 }
 
 # ── WEATHER MOOD ─────────────────────────────────────────────────────────────
@@ -102,37 +107,77 @@ def weather_icon(code: int) -> str:
     if code in (1087, 1273, 1276, 1279, 1282): return "⛈"
     return "🌤"
 
+# Коды для фильтрации placeholder-ссылок (не показываем если не заменены)
+def _is_real_url(url: str) -> bool:
+    return url.startswith("http")
+
 def affiliate_block(condition_code: int, lang: str) -> tuple[str, InlineKeyboardMarkup | None]:
-    """Возвращает текст + кнопку партнёрки"""
+    """Возвращает текст + кнопки партнёрок по контексту погоды"""
     sep = "\n━━━━━━━━━━━━━━━━"
     builder = InlineKeyboardBuilder()
+    count = 0
 
-    if condition_code in range(1063, 1282):
-        # Дождь/снег → такси + доставка
-        text = sep + ("\n🚖 <b>Не выходи под дождь — вызови такси или закажи еду домой:</b>" if lang == "ru" else "\n🚖 <b>Don't go out in the rain — order a taxi or food delivery:</b>")
-        builder.button(text=AFFILIATE["bolt"][lang], url=AFFILIATE["bolt"]["url"])
-        builder.button(text=AFFILIATE["wolt"][lang], url=AFFILIATE["wolt"]["url"])
-        builder.button(text="🛍 " + ("Идеи для дождливого дня" if lang == "ru" else "Rainy day ideas"), url=AFFILIATE["aliexpress"]["url"])
-        builder.adjust(2, 1)
+    SNOW_CODES = {1066, 1114, 1117, 1210, 1213, 1216, 1219, 1222, 1225, 1255, 1258,
+                  1069, 1072, 1168, 1171, 1198, 1201, 1204, 1207, 1249, 1252}
+    RAIN_CODES = {1063, 1150, 1153, 1180, 1183, 1186, 1189, 1192, 1195, 1240, 1243,
+                  1246, 1087, 1273, 1276, 1279, 1282}
+
+    if condition_code in RAIN_CODES:
+        # 🌧 Дождь → такси, доставка, зонты, билеты (раз дома сидишь — помечтай о поездке)
+        text = sep + ("\n🚖 <b>Дождливый день — самое время остаться дома или уехать в тепло:</b>"
+                      if lang == "ru" else
+                      "\n🚖 <b>Rainy day — stay home or escape somewhere warm:</b>")
+        for key in ["bolt", "inDrive", "wolt", "glovo", "umbrella", "tickets"]:
+            if _is_real_url(AFFILIATE[key]["url"]):
+                builder.button(text=AFFILIATE[key][lang], url=AFFILIATE[key]["url"])
+                count += 1
+        builder.adjust(2)
+
+    elif condition_code in SNOW_CODES:
+        # ❄️ Снег → такси, тёплая одежда
+        text = sep + ("\n🧥 <b>Холодно и снежно — одевайся теплее:</b>"
+                      if lang == "ru" else
+                      "\n🧥 <b>Cold and snowy — dress warm:</b>")
+        for key in ["bolt", "inDrive", "warm", "clothes"]:
+            if _is_real_url(AFFILIATE[key]["url"]):
+                builder.button(text=AFFILIATE[key][lang], url=AFFILIATE[key]["url"])
+                count += 1
+        builder.adjust(2)
+
     elif condition_code == 1000:
-        # Солнечно → одежда + еда навынос
-        text = sep + ("\n🌞 <b>Солнечный день — самое время обновить гардероб или выбраться поесть:</b>" if lang == "ru" else "\n🌞 <b>Sunny day — perfect time to update your wardrobe or grab a bite:</b>")
-        builder.button(text=AFFILIATE["clothes"][lang], url=AFFILIATE["clothes"]["url"])
-        builder.button(text=AFFILIATE["glovo"][lang], url=AFFILIATE["glovo"]["url"])
+        # ☀️ Солнце → одежда, еда, билеты (хорошая погода — время путешествовать)
+        text = sep + ("\n🌞 <b>Солнечный день — идеальное время для активности или поездки:</b>"
+                      if lang == "ru" else
+                      "\n🌞 <b>Sunny day — perfect for going out or planning a trip:</b>")
+        for key in ["clothes", "glovo", "tickets", "hotels"]:
+            if _is_real_url(AFFILIATE[key]["url"]):
+                builder.button(text=AFFILIATE[key][lang], url=AFFILIATE[key]["url"])
+                count += 1
         builder.adjust(2)
-    elif condition_code in range(1200, 1282):
-        # Снег → такси + одежда
-        text = sep + ("\n🧥 <b>Холодно и снежно — одевайся теплее и не скользи:</b>" if lang == "ru" else "\n🧥 <b>Cold and snowy — dress warm and stay safe:</b>")
-        builder.button(text=AFFILIATE["clothes"][lang], url=AFFILIATE["clothes"]["url"])
-        builder.button(text=AFFILIATE["inDrive"][lang], url=AFFILIATE["inDrive"]["url"])
-        builder.adjust(2)
-    else:
-        text = sep + ("\n👗 <b>Одевайся по погоде:</b>" if lang == "ru" else "\n👗 <b>Dress for the weather:</b>")
-        builder.button(text=AFFILIATE["clothes"][lang], url=AFFILIATE["clothes"]["url"])
-        builder.adjust(1)
 
-    kb = builder.as_markup()
-    return text, kb
+    elif condition_code in (1003, 1006, 1009):
+        # ⛅ Облачно → нейтральный блок
+        text = sep + ("\n🌥 <b>Обычный день — планируй с умом:</b>"
+                      if lang == "ru" else
+                      "\n🌥 <b>Cloudy day — plan ahead:</b>")
+        for key in ["clothes", "tickets", "hotels"]:
+            if _is_real_url(AFFILIATE[key]["url"]):
+                builder.button(text=AFFILIATE[key][lang], url=AFFILIATE[key]["url"])
+                count += 1
+        builder.adjust(2)
+
+    else:
+        text = sep + ("\n✈️ <b>Погода и путешествия:</b>"
+                      if lang == "ru" else
+                      "\n✈️ <b>Weather & travel:</b>")
+        for key in ["tickets", "hotels", "clothes"]:
+            if _is_real_url(AFFILIATE[key]["url"]):
+                builder.button(text=AFFILIATE[key][lang], url=AFFILIATE[key]["url"])
+                count += 1
+        builder.adjust(2)
+
+    kb = builder.as_markup() if count > 0 else None
+    return text if count > 0 else "", kb
 
 # ── DATABASE ──────────────────────────────────────────────────────────────────
 async def init_db():
@@ -467,7 +512,20 @@ async def cmd_start(msg: Message):
     lang = user["lang"] if user else "ru"
     if not user:
         await save_user(msg.from_user.id, lang=lang)
-    await msg.answer(T["welcome"][lang], reply_markup=start_kb(lang))
+    
+    # Создаем кнопку с твоей ссылкой
+    markup = InlineKeyboardBuilder()
+    link_text = "✨ Перейти к интересному" if lang == "ru" else "✨ Discover something interesting"
+    markup.button(text=link_text, url="https://omg10.com/4/11107148")
+    
+    # Добавляем кнопки из start_kb к нашей кнопке
+    start_buttons = start_kb(lang).inline_keyboard
+    for row in start_buttons:
+        for button in row:
+            markup.add(button)
+    markup.adjust(1) # Настройка количества кнопок в ряду
+    
+    await msg.answer(T["welcome"][lang], reply_markup=markup.as_markup())
 
 @dp.message(Command("help"))
 async def cmd_help(msg: Message):
