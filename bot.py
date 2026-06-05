@@ -3,6 +3,10 @@ import logging
 import aiohttp
 import aiosqlite
 from datetime import datetime
+import pytz
+
+def now_local():
+    return datetime.now(pytz.timezone("Europe/Chisinau"))
 from aiogram import Bot, Dispatcher, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
@@ -213,7 +217,7 @@ def format_day_forecast(data: dict, lang: str) -> str:
     if lang == "ru":
         return (
             f"{icon} <b>Погода — {city_name}, {country}</b>\n"
-            f"📅 {datetime.now().strftime('%d.%m.%Y, %A')}\n\n"
+            f"📅 {now_local().strftime('%d.%m.%Y, %A')}\n\n"
             f"{mood}\n\n"
             f"🌡 <b>Сейчас:</b> {temp}°C (ощущается {feels}°C)\n"
             f"📊 <b>День/Ночь:</b> {t_max}°C / {t_min}°C\n"
@@ -225,7 +229,7 @@ def format_day_forecast(data: dict, lang: str) -> str:
     else:
         return (
             f"{icon} <b>Weather — {city_name}, {country}</b>\n"
-            f"📅 {datetime.now().strftime('%d.%m.%Y, %A')}\n\n"
+            f"📅 {now_local().strftime('%d.%m.%Y, %A')}\n\n"
             f"{mood}\n\n"
             f"🌡 <b>Now:</b> {temp}°C (feels like {feels}°C)\n"
             f"📊 <b>Day/Night:</b> {t_max}°C / {t_min}°C\n"
