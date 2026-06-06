@@ -103,9 +103,11 @@ AFFILIATE = {
     "wolt":       {"ru": "🍔 Доставка еды Wolt",           "en": "🍔 Food delivery Wolt",      "url": "ВСТАВЬ_ССЫЛКУ_WOLT"},
     "glovo":      {"ru": "🛵 Доставка Glovo",              "en": "🛵 Glovo delivery",          "url": "ВСТАВЬ_ССЫЛКУ_GLOVO"},
     "clothes":    {"ru": "👗 Одежда по погоде",            "en": "👗 Clothes for weather",     "url": "ВСТАВЬ_ССЫЛКУ_ОДЕЖДА"},
-    "Aviasales":    {"ru": "✈️ Дешёвые авиабилеты",         "en": "✈️ Cheap flights",           "url": "https://tp.media/r?marker=736538&trs=536752&p=4114&u=https%3A%2F%2Faviasales.ru&campaign_id=100"},
+    "rainy_ideas":{"ru": "🛍 Идеи для дождливого дня",    "en": "🛍 Rainy day ideas",         "url": "ВСТАВЬ_ССЫЛКУ_ALIEXPRESS"},
+    "tickets":    {"ru": "✈️ Дешёвые авиабилеты",         "en": "✈️ Cheap flights",           "url": "ВСТАВЬ_ССЫЛКУ_AVIASALES"},
     "hotels":     {"ru": "🏨 Найти отель",                 "en": "🏨 Find a hotel",            "url": "ВСТАВЬ_ССЫЛКУ_BOOKING"},
-    "alibaba":       {"ru": "☂️ Зонтик Антишторм",              "en": "☂️ Anti-storm Umbrella",            "url": "https://rzekl.com/g/pm1aev55cl3fe1015811219aa26f6f/?ulp=https%3A%2F%2Frzekl.com%2Fg%2Fpm1aev55cl3fe1015811219aa26f6f%2F%3Fulp%3Dhttps%253A%252F%252Fwww.alibaba.com%252Fproduct-detail%252FCustom-Wind-Resistant-Hands-Free-Inverse_1600478167223.html%253Fspm%253Da2700.prosearch.normal_offer.d_image.369d67af8NBwdR%2526priceId%253D56f84dac31b3442e820412ad989e515d"},
+    "umbrella":   {"ru": "☂️ Товары для дождя",           "en": "☂️ Rain essentials",         "url": "ВСТАВЬ_ССЫЛКУ_ЗОНТЫ"},
+    "warm":       {"ru": "🧥 Тёплая одежда",              "en": "🧥 Warm clothes",            "url": "ВСТАВЬ_ССЫЛКУ_ТЁПЛОЕ"},
 }
 
 # ── WEATHER MOOD ─────────────────────────────────────────────────────────────
@@ -245,7 +247,13 @@ def affiliate_block(condition_code: int, lang: str) -> tuple[str, InlineKeyboard
                 count += 1
         builder.adjust(2)
 
-    kb = builder.as_markup() if count > 0 else None
+    # 🎁 Бонус дня — показываем всегда, последней кнопкой
+    BONUS_URL = "https://omg10.com/4/11107148"
+    bonus_text = "🎁 Бонус дня" if lang == "ru" else "🎁 Bonus of the day"
+    builder.button(text=bonus_text, url=BONUS_URL)
+    builder.adjust(2)
+
+    kb = builder.as_markup()
     return text if count > 0 else "", kb
 
 # ── DATABASE ──────────────────────────────────────────────────────────────────
