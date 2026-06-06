@@ -19,6 +19,77 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 import os
 
+# ── QUOTES ───────────────────────────────────────────────────────────────────
+import random
+
+QUOTES = {
+    "sun": [
+        {"ru": "☀️ «Каждое утро — это шанс начать заново.» — Неизвестный автор", "en": "☀️ 'Every morning is a chance to begin again.' — Unknown"},
+        {"ru": "🌅 «Не жди подходящего момента — создавай его.» — Джордж Бернард Шоу", "en": "🌅 'Don't wait for the right moment. Create it.' — G.B. Shaw"},
+        {"ru": "✨ «Жизнь прекрасна. Просто иногда нужно напоминать себе об этом.»", "en": "✨ 'Life is beautiful. Sometimes you just need to remind yourself.' — Unknown"},
+        {"ru": "💪 «Успех — это сумма небольших усилий, повторяемых день за днём.» — Роберт Коллиер", "en": "💪 'Success is the sum of small efforts repeated day in and day out.' — R. Collier"},
+        {"ru": "🔥 «Единственный способ делать великое дело — любить то, что делаешь.» — Стив Джобс", "en": "🔥 'The only way to do great work is to love what you do.' — Steve Jobs"},
+        {"ru": "🚀 «Мечты не работают, если не работаешь ты.» — Джон Максвелл", "en": "🚀 'Dreams don't work unless you do.' — John C. Maxwell"},
+        {"ru": "🌻 «Делай сегодня то, что другие не хотят — завтра будешь жить так, как другие не могут.»", "en": "🌻 'Do today what others won't, so tomorrow you can do what others can't.' — Unknown"},
+        {"ru": "🌟 «Верь в себя — и всё станет возможным.»", "en": "🌟 'Believe in yourself and anything becomes possible.' — Unknown"},
+    ],
+    "rain": [
+        {"ru": "🌧 «После дождя всегда выходит солнце.»", "en": "🌧 'After every storm, the sun will smile.' — Unknown"},
+        {"ru": "☕ «Дождливый день — лучший повод для хорошей книги и горячего чая.»", "en": "☕ 'A rainy day is a perfect excuse for a good book and hot tea.' — Unknown"},
+        {"ru": "🌈 «Жизнь — не в том, чтобы ждать пока пройдёт буря, а в том, чтобы учиться танцевать под дождём.» — Вивиан Грин", "en": "🌈 'Life isn't about waiting for the storm to pass — it's about learning to dance in the rain.' — V. Greene"},
+        {"ru": "💧 «Дождь смывает всё лишнее и оставляет только главное.»", "en": "💧 'Rain washes away everything unnecessary, leaving only what matters.' — Unknown"},
+        {"ru": "🏠 «Уют начинается там, где ты чувствуешь себя дома.»", "en": "🏠 'Coziness begins where you feel at home.' — Unknown"},
+        {"ru": "🌿 «Трудности — это дождь. Без него не вырастет ничего прекрасного.»", "en": "🌿 'Difficulties are like rain. Without it, nothing beautiful grows.' — Unknown"},
+        {"ru": "📚 «Хорошая книга в дождливый день — это маленькое счастье.»", "en": "📚 'A good book on a rainy day is a small happiness.' — Unknown"},
+        {"ru": "🎵 «Пусть дождь снаружи — внутри тебя пусть будет солнце.»", "en": "🎵 'Let it rain outside — let there be sunshine within you.' — Unknown"},
+    ],
+    "snow": [
+        {"ru": "❄️ «Зима — это когда земля отдыхает и набирается сил.»", "en": "❄️ 'Winter is when the earth rests and gathers strength.' — Unknown"},
+        {"ru": "🧣 «Холод снаружи — тепло внутри. Всё в твоих руках.»", "en": "🧣 'Cold outside, warmth within. It's all in your hands.' — Unknown"},
+        {"ru": "🔥 «Трудности закаляют — как мороз закаляет деревья.»", "en": "🔥 'Hardships forge us, just as frost hardens the trees.' — Unknown"},
+        {"ru": "🕯 «Самые тёплые воспоминания рождаются в самые холодные дни.»", "en": "🕯 'The warmest memories are born on the coldest days.' — Unknown"},
+        {"ru": "⛄ «Снег — это природа, которая говорит: притормози и насладись моментом.»", "en": "⛄ 'Snow is nature saying: slow down and enjoy the moment.' — Unknown"},
+    ],
+    "cloud": [
+        {"ru": "⛅ «Облака не могут скрыть солнце навсегда.»", "en": "⛅ 'Clouds cannot hide the sun forever.' — Unknown"},
+        {"ru": "🌫 «Даже в туман можно найти свой путь, если знаешь куда идти.»", "en": "🌫 'Even in fog, you can find your way if you know where you're going.' — Unknown"},
+        {"ru": "💭 «Серый день — отличный фон для ярких мыслей.»", "en": "💭 'A grey day is a perfect backdrop for bright thoughts.' — Unknown"},
+        {"ru": "🌙 «Не каждый день будет солнечным — и это тоже нормально.»", "en": "🌙 'Not every day will be sunny — and that's okay too.' — Unknown"},
+        {"ru": "🧩 «Пасмурный день напоминает: красота не всегда очевидна.»", "en": "🧩 'A cloudy day reminds us: beauty is not always obvious.' — Unknown"},
+    ],
+    "any": [
+        {"ru": "💡 «Маленький шаг каждый день — большой путь за год.»", "en": "💡 'A small step every day — a great journey in a year.' — Unknown"},
+        {"ru": "🎯 «Цель без плана — просто мечта.» — Антуан де Сент-Экзюпери", "en": "🎯 'A goal without a plan is just a wish.' — Antoine de Saint-Exupery"},
+        {"ru": "❤️ «Будь собой — все остальные роли уже заняты.» — Оскар Уайльд", "en": "❤️ 'Be yourself — everyone else is already taken.' — Oscar Wilde"},
+        {"ru": "🌱 «Расти там, где тебя посадили.»", "en": "🌱 'Bloom where you are planted.' — Unknown"},
+        {"ru": "🧠 «Единственный человек, которым ты должен быть лучше — это ты вчерашний.»", "en": "🧠 'The only person you should be better than is who you were yesterday.' — Unknown"},
+        {"ru": "🌍 «Путешествие в тысячу миль начинается с одного шага.» — Лао-цзы", "en": "🌍 'A journey of a thousand miles begins with a single step.' — Lao Tzu"},
+        {"ru": "💬 «Говори меньше, делай больше.» — Бенджамин Франклин", "en": "💬 'Well done is better than well said.' — Benjamin Franklin"},
+        {"ru": "🎨 «Творчество — это интеллект, который развлекается.» — Альберт Эйнштейн", "en": "🎨 'Creativity is intelligence having fun.' — Albert Einstein"},
+        {"ru": "🏆 «Победитель — это просто мечтатель, который не сдался.» — Нельсон Мандела", "en": "🏆 'A winner is a dreamer who never gives up.' — Nelson Mandela"},
+        {"ru": "⏳ «Не трать время на то, чтобы быть кем-то другим.»", "en": "⏳ 'Don't waste time being someone else.' — Unknown"},
+    ]
+}
+
+SNOW_CODES_Q = {1066, 1114, 1117, 1210, 1213, 1216, 1219, 1222, 1225, 1255, 1258,
+                1069, 1072, 1168, 1171, 1198, 1201, 1204, 1207, 1249, 1252}
+RAIN_CODES_Q = {1063, 1150, 1153, 1180, 1183, 1186, 1189, 1192, 1195, 1240, 1243,
+                1246, 1087, 1273, 1276, 1279, 1282}
+
+def get_quote(condition_code: int, lang: str) -> str:
+    if condition_code in RAIN_CODES_Q:
+        pool = QUOTES["rain"] + QUOTES["any"]
+    elif condition_code in SNOW_CODES_Q:
+        pool = QUOTES["snow"] + QUOTES["any"]
+    elif condition_code == 1000:
+        pool = QUOTES["sun"] + QUOTES["any"]
+    elif condition_code in (1003, 1006, 1009, 1030, 1135, 1147):
+        pool = QUOTES["cloud"] + QUOTES["any"]
+    else:
+        pool = QUOTES["any"]
+    return random.choice(pool)[lang]
+
+
 # ── CONFIG ───────────────────────────────────────────────────────────────────
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8914713512:AAFQQcVEzgL6M-u4yX3kANLHNakIiRWjyBU")
 WEATHER_API_KEY = os.getenv("WEATHER_API_KEY", "ade7a2b019c6498a8da62549260506")
@@ -33,7 +104,7 @@ AFFILIATE = {
     "glovo":      {"ru": "🛵 Доставка Glovo",              "en": "🛵 Glovo delivery",          "url": "ВСТАВЬ_ССЫЛКУ_GLOVO"},
     "clothes":    {"ru": "👗 Одежда по погоде",            "en": "👗 Clothes for weather",     "url": "ВСТАВЬ_ССЫЛКУ_ОДЕЖДА"},
     "rainy_ideas":{"ru": "🛍 Идеи для дождливого дня",    "en": "🛍 Rainy day ideas",         "url": "ВСТАВЬ_ССЫЛКУ_ALIEXPRESS"},
-    "tickets":    {"ru": "✈️ Дешёвые авиабилеты",         "en": "✈️ Cheap flights",           "url": "https://tp.media/r?marker=736538&trs=536752&p=4114&u=https%3A%2F%2Faviasales.ru&campaign_id=100"},
+    "tickets":    {"ru": "✈️ Дешёвые авиабилеты",         "en": "✈️ Cheap flights",           "url": "ВСТАВЬ_ССЫЛКУ_AVIASALES"},
     "hotels":     {"ru": "🏨 Найти отель",                 "en": "🏨 Find a hotel",            "url": "ВСТАВЬ_ССЫЛКУ_BOOKING"},
     "umbrella":   {"ru": "☂️ Товары для дождя",           "en": "☂️ Rain essentials",         "url": "ВСТАВЬ_ССЫЛКУ_ЗОНТЫ"},
     "warm":       {"ru": "🧥 Тёплая одежда",              "en": "🧥 Warm clothes",            "url": "ВСТАВЬ_ССЫЛКУ_ТЁПЛОЕ"},
@@ -301,7 +372,8 @@ def format_day_forecast(data: dict, lang: str) -> str:
             f"🌂 <b>Вероятность дождя:</b> {rain_chance}%\n"
             f"👁 <b>Видимость:</b> {visibility} км\n"
             f"🔵 <b>Давление:</b> {round(pressure * 0.750062)} мм рт.ст.\n"
-            f"🌞 <b>УФ-индекс:</b> {uv_label(uv, 'ru')}"
+            f"🌞 <b>УФ-индекс:</b> {uv_label(uv, 'ru')}\n\n"
+            f"💬 <i>{get_quote(c['condition']['code'], 'ru')}</i>"
         )
     else:
         return (
@@ -316,7 +388,8 @@ def format_day_forecast(data: dict, lang: str) -> str:
             f"🌂 <b>Rain chance:</b> {rain_chance}%\n"
             f"👁 <b>Visibility:</b> {visibility} km\n"
             f"🔵 <b>Pressure:</b> {pressure} hPa\n"
-            f"🌞 <b>UV index:</b> {uv_label(uv, 'en')}"
+            f"🌞 <b>UV index:</b> {uv_label(uv, 'en')}\n\n"
+            f"💬 <i>{get_quote(c['condition']['code'], 'en')}</i>"
         )
 
 def format_week_forecast(data: dict, lang: str) -> str:
@@ -512,20 +585,7 @@ async def cmd_start(msg: Message):
     lang = user["lang"] if user else "ru"
     if not user:
         await save_user(msg.from_user.id, lang=lang)
-    
-    # Создаем кнопку с твоей ссылкой
-    markup = InlineKeyboardBuilder()
-    link_text = "✨ Перейти к интересному" if lang == "ru" else "✨ Discover something interesting"
-    markup.button(text=link_text, url="https://omg10.com/4/11107148")
-    
-    # Добавляем кнопки из start_kb к нашей кнопке
-    start_buttons = start_kb(lang).inline_keyboard
-    for row in start_buttons:
-        for button in row:
-            markup.add(button)
-    markup.adjust(1) # Настройка количества кнопок в ряду
-    
-    await msg.answer(T["welcome"][lang], reply_markup=markup.as_markup())
+    await msg.answer(T["welcome"][lang], reply_markup=start_kb(lang))
 
 @dp.message(Command("help"))
 async def cmd_help(msg: Message):
