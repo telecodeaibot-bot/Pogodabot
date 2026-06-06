@@ -94,6 +94,7 @@ def get_quote(condition_code: int, lang: str) -> str:
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8914713512:AAFQQcVEzgL6M-u4yX3kANLHNakIiRWjyBU")
 WEATHER_API_KEY = os.getenv("WEATHER_API_KEY", "ade7a2b019c6498a8da62549260506")
 DB_PATH = "pogoda.db"
+ADMIN_ID = int(os.getenv("ADMIN_ID", "7262437300"))
 
 # ── AFFILIATE LINKS ──────────────────────────────────────────────────────────
 # 👇 ЗАМЕНИ URL на свои партнёрские ссылки когда получишь их в Admitad или другой CPA сети
@@ -104,9 +105,9 @@ AFFILIATE = {
     "glovo":      {"ru": "🛵 Доставка Glovo",              "en": "🛵 Glovo delivery",          "url": "ВСТАВЬ_ССЫЛКУ_GLOVO"},
     "clothes":    {"ru": "👗 Одежда по погоде",            "en": "👗 Clothes for weather",     "url": "ВСТАВЬ_ССЫЛКУ_ОДЕЖДА"},
     "rainy_ideas":{"ru": "🛍 Идеи для дождливого дня",    "en": "🛍 Rainy day ideas",         "url": "ВСТАВЬ_ССЫЛКУ_ALIEXPRESS"},
-    "tickets":    {"ru": "✈️ Дешёвые авиабилеты",         "en": "✈️ Cheap flights",           "url": "ВСТАВЬ_ССЫЛКУ_AVIASALES"},
+    "tickets":    {"ru": "✈️ Дешёвые авиабилеты",         "en": "✈️ Cheap flights",           "url": "https://tp.media/r?marker=736538&trs=536752&p=4114&u=https%3A%2F%2Faviasales.ru&campaign_id=100"},
     "hotels":     {"ru": "🏨 Найти отель",                 "en": "🏨 Find a hotel",            "url": "ВСТАВЬ_ССЫЛКУ_BOOKING"},
-    "umbrella":   {"ru": "☂️ Товары для дождя",           "en": "☂️ Rain essentials",         "url": "ВСТАВЬ_ССЫЛКУ_ЗОНТЫ"},
+    "umbrella":   {"ru": "☂️ Товары для дождя",           "en": "☂️ Rain essentials",         "url": "https://rzekl.com/g/pm1aev55cl3fe1015811219aa26f6f/?ulp=https%3A%2F%2Fwww.alibaba.com%2Fproduct-detail%2FCustom-Wind-Resistant-Hands-Free-Inverse_1600478167223.html%3Fspm%3Da2700.prosearch.normal_offer.d_image.369d67af8NBwdR%26priceId%3D56f84dac31b3442e820412ad989e515d"},
     "warm":       {"ru": "🧥 Тёплая одежда",              "en": "🧥 Warm clothes",            "url": "ВСТАВЬ_ССЫЛКУ_ТЁПЛОЕ"},
 }
 
@@ -265,9 +266,16 @@ async def init_db():
                 city TEXT,
                 lang TEXT DEFAULT 'ru',
                 forecast_format TEXT DEFAULT 'day',
-                active INTEGER DEFAULT 1
+                active INTEGER DEFAULT 1,
+                joined_at TEXT DEFAULT (datetime('now')),
+                last_active TEXT DEFAULT (datetime('now'))
             )
         """)
+        for col in ["joined_at TEXT DEFAULT (datetime('now'))", "last_active TEXT DEFAULT (datetime('now'))"]:
+            try:
+                await db.execute(f"ALTER TABLE users ADD COLUMN {col}")
+            except Exception:
+                pass
         await db.commit()
 
 async def get_user(user_id: int):
@@ -282,6 +290,7 @@ async def save_user(user_id: int, **kwargs):
     async with aiosqlite.connect(DB_PATH) as db:
         existing = await get_user(user_id)
         if existing:
+            kwargs["last_active"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             sets = ", ".join(f"{k} = ?" for k in kwargs)
             vals = list(kwargs.values()) + [user_id]
             await db.execute(f"UPDATE users SET {sets} WHERE user_id = ?", vals)
@@ -692,6 +701,62 @@ async def process_city(msg: Message, state: FSMContext):
 
     confirmed = T["city_saved"][lang].format(city=f"{city_name}, {country}")
     await msg.answer(confirmed, reply_markup=format_kb(lang))
+
+
+@dp.message(Command("stats"))
+async def cmd_stats(msg: Message):
+    if msg.from_user.id != ADMIN_ID:
+        return
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT COUNT(*) FROM users") as cur:
+            total = (await cur.fetchone())[0]
+        async with db.execute("SELECT COUNT(*) FROM users WHERE active = 1 AND city IS NOT NULL") as cur:
+            active = (await cur.fetchone())[0]
+        async with db.execute("SELECT COUNT(*) FROM users WHERE city IS NULL") as cur:
+            no_city = (await cur.fetchone())[0]
+        async with db.execute("SELECT COUNT(*) FROM users WHERE active = 0") as cur:
+            unsubbed = (await cur.fetchone())[0]
+        async with db.execute("SELECT lang, COUNT(*) FROM users GROUP BY lang") as cur:
+            langs = await cur.fetchall()
+        async with db.execute("SELECT forecast_format, COUNT(*) FROM users WHERE active=1 GROUP BY forecast_format") as cur:
+            formats = await cur.fetchall()
+        async with db.execute("SELECT COUNT(*) FROM users WHERE DATE(joined_at) = DATE('now')") as cur:
+            today_count = (await cur.fetchone())[0]
+        async with db.execute("SELECT COUNT(*) FROM users WHERE joined_at >= datetime('now', '-7 days')") as cur:
+            week_count = (await cur.fetchone())[0]
+        async with db.execute("SELECT COUNT(*) FROM users WHERE last_active >= datetime('now', '-1 day')") as cur:
+            active_24h = (await cur.fetchone())[0]
+        async with db.execute("SELECT city, COUNT(*) as cnt FROM users WHERE city IS NOT NULL GROUP BY city ORDER BY cnt DESC LIMIT 5") as cur:
+            top_cities = await cur.fetchall()
+
+    lang_str = " | ".join(f"{la}: {cnt}" for la, cnt in langs)
+    fmt_map = {"day": "Day", "week": "Week", "month": "Month", "all": "All"}
+    fmt_str = " | ".join(f"{fmt_map.get(f, f)}: {c}" for f, c in formats)
+    cities_str = "\n".join(f"  {i+1}. {city} - {cnt}" for i, (city, cnt) in enumerate(top_cities)) or "  no data"
+    now_str = datetime.now().strftime("%d.%m.%Y %H:%M")
+
+    parts = [
+        "<b>Statistika @pogoda_mood_bot</b>",
+        f"Date: {now_str}",
+        "",
+        "<b>Users:</b>",
+        f"  Total: <b>{total}</b>",
+        f"  Subscribed: <b>{active}</b>",
+        f"  No city: <b>{no_city}</b>",
+        f"  Unsubscribed: <b>{unsubbed}</b>",
+        "",
+        "<b>Growth:</b>",
+        f"  Today: <b>+{today_count}</b>",
+        f"  Week: <b>+{week_count}</b>",
+        f"  Active 24h: <b>{active_24h}</b>",
+        "",
+        f"<b>Languages:</b> {lang_str}",
+        f"<b>Formats:</b> {fmt_str}",
+        "",
+        "<b>Top cities:</b>",
+        cities_str,
+    ]
+    await msg.answer("\n".join(parts))
 
 # ── CALLBACKS ─────────────────────────────────────────────────────────────────
 @dp.callback_query(F.data == "set_city")
