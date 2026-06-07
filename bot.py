@@ -91,8 +91,8 @@ def get_quote(condition_code: int, lang: str) -> str:
 
 
 # ── CONFIG ───────────────────────────────────────────────────────────────────
-BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-WEATHER_API_KEY = os.getenv("WEATHER_API_KEY", "")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8914713512:AAFQQcVEzgL6M-u4yX3kANLHNakIiRWjyBU")
+WEATHER_API_KEY = os.getenv("WEATHER_API_KEY", "ade7a2b019c6498a8da62549260506")
 DB_PATH = "pogoda.db"
 ADMIN_ID = int(os.getenv("ADMIN_ID", "7262437300"))
 
@@ -635,11 +635,12 @@ async def cmd_settings(msg: Message):
     await msg.answer(text, reply_markup=settings_kb(lang))
 
 @dp.message(Command("weather"))
-async def cmd_weather(msg: Message):
+async def cmd_weather(msg: Message, state: FSMContext):
     user = await get_user(msg.from_user.id)
     lang = user["lang"] if user else "ru"
     if not user or not user.get("city"):
-        await msg.answer(T["no_city"][lang])
+        await state.set_state(CityForm.waiting_city)
+        await msg.answer(T["ask_city"][lang])
         return
     wait_msg = await msg.answer("⏳ " + ("Загружаю прогноз..." if lang == "ru" else "Loading forecast..."))
     text, kb = await build_forecast_message(user["city"], user.get("format", "day"), lang)
@@ -767,11 +768,13 @@ async def cb_set_city(call: CallbackQuery, state: FSMContext):
     await call.answer()
 
 @dp.callback_query(F.data == "weather_now")
-async def cb_weather_now(call: CallbackQuery):
+async def cb_weather_now(call: CallbackQuery, state: FSMContext):
     user = await get_user(call.from_user.id)
     lang = user["lang"] if user else "ru"
     if not user or not user.get("city"):
-        await call.message.answer(T["no_city"][lang])
+        # Сразу спрашиваем город вместо ошибки
+        await state.set_state(CityForm.waiting_city)
+        await call.message.answer(T["ask_city"][lang])
         await call.answer()
         return
     wait_msg = await call.message.answer("⏳ " + ("Загружаю..." if lang == "ru" else "Loading..."))
