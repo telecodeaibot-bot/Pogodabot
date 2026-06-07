@@ -91,8 +91,8 @@ def get_quote(condition_code: int, lang: str) -> str:
 
 
 # ── CONFIG ───────────────────────────────────────────────────────────────────
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8914713512:AAFQQcVEzgL6M-u4yX3kANLHNakIiRWjyBU")
-WEATHER_API_KEY = os.getenv("WEATHER_API_KEY", "ade7a2b019c6498a8da62549260506")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+WEATHER_API_KEY = os.getenv("WEATHER_API_KEY", "")
 DB_PATH = "pogoda.db"
 ADMIN_ID = int(os.getenv("ADMIN_ID", "7262437300"))
 
