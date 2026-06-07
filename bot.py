@@ -104,10 +104,11 @@ AFFILIATE = {
     "wolt":       {"ru": "🍔 Доставка еды Wolt",           "en": "🍔 Food delivery Wolt",      "url": "ВСТАВЬ_ССЫЛКУ_WOLT"},
     "glovo":      {"ru": "🛵 Доставка Glovo",              "en": "🛵 Glovo delivery",          "url": "ВСТАВЬ_ССЫЛКУ_GLOVO"},
     "clothes":    {"ru": "👗 Одежда по погоде",            "en": "👗 Clothes for weather",     "url": "ВСТАВЬ_ССЫЛКУ_ОДЕЖДА"},
-    "rainy_ideas":{"ru": "🛍 Идеи для дождливого дня",    "en": "🛍 Rainy day ideas",         "url": "ВСТАВЬ_ССЫЛКУ_ALIEXPRESS"},
-    "tickets":    {"ru": "✈️ Дешёвые авиабилеты",         "en": "✈️ Cheap flights",           "url": "https://tp.media/r?marker=736538&trs=536752&p=4114&u=https%3A%2F%2Faviasales.ru&campaign_id=100"},
+    "rainy_ideas":{"ru": "☂️ Зонт от дождя (Alibaba)",    "en": "☂️ Rain umbrella (Alibaba)",         "url": "https://rzekl.com/g/pm1aev55cl3fe1015811219aa26f6f/?ulp=https%3A%2F%2Fwww.alibaba.com%2Fproduct-detail%2FCustom-Wind-Resistant-Hands-Free-Inverse_1600478167223.html"},
+    "tickets":    {"ru": "✈️ Авиабилеты — Aviasales",         "en": "✈️ Cheap flights — Aviasales",           "url": "https://tp.media/r?marker=736538&trs=536752&p=4114&u=https%3A%2F%2Faviasales.ru&campaign_id=100"},
     "hotels":     {"ru": "🏨 Найти отель",                 "en": "🏨 Find a hotel",            "url": "ВСТАВЬ_ССЫЛКУ_BOOKING"},
-    "umbrella":   {"ru": "☂️ Товары для дождя",           "en": "☂️ Rain essentials",         "url": "https://rzekl.com/g/pm1aev55cl3fe1015811219aa26f6f/?ulp=https%3A%2F%2Fwww.alibaba.com%2Fproduct-detail%2FCustom-Wind-Resistant-Hands-Free-Inverse_1600478167223.html%3Fspm%3Da2700.prosearch.normal_offer.d_image.369d67af8NBwdR%26priceId%3D56f84dac31b3442e820412ad989e515d"},
+    "bothub":     {"ru": "🤖 AI Ассистент — BotHub",        "en": "🤖 AI Assistant — BotHub",  "url": "https://bothub.chat/?invitedBy=zGQwEkF5uAu-92IxmDmZH"},
+    "umbrella":   {"ru": "☂️ Зонт от дождя (Alibaba)",           "en": "☂️ Rain umbrella (Alibaba)",         "url": "https://rzekl.com/g/pm1aev55cl3fe1015811219aa26f6f/?ulp=https%3A%2F%2Fwww.alibaba.com%2Fproduct-detail%2FCustom-Wind-Resistant-Hands-Free-Inverse_1600478167223.html"},
     "warm":       {"ru": "🧥 Тёплая одежда",              "en": "🧥 Warm clothes",            "url": "ВСТАВЬ_ССЫЛКУ_ТЁПЛОЕ"},
 }
 
@@ -248,10 +249,8 @@ def affiliate_block(condition_code: int, lang: str) -> tuple[str, InlineKeyboard
                 count += 1
         builder.adjust(2)
 
-    # 🎁 Бонус дня — показываем всегда, последней кнопкой
-    BONUS_URL = "https://omg10.com/4/11107148"
-    bonus_text = "🎁 Бонус дня" if lang == "ru" else "🎁 Bonus of the day"
-    builder.button(text=bonus_text, url=BONUS_URL)
+    # 🤖 BotHub — всегда показываем
+    builder.button(text=AFFILIATE["bothub"][lang], url=AFFILIATE["bothub"]["url"])
     builder.adjust(2)
 
     kb = builder.as_markup()
