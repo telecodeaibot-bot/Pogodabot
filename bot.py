@@ -1,191 +1,237 @@
-import asyncio
-import logging
-import aiohttp
-import aiosqlite
+import asyncio, logging, aiohttp, aiosqlite, os, random
 from datetime import datetime
 import pytz
-import random
-import os
-
-def now_local():
-    return datetime.now(pytz.timezone("Europe/Chisinau"))
-
 from aiogram import Bot, Dispatcher, F
 from aiogram.client.default import DefaultBotProperties
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import (Message, CallbackQuery, InlineKeyboardMarkup,
+                            ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove)
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-# ── QUOTES ───────────────────────────────────────────────────────────────────
-QUOTES = {
-    "sun": [
-        {"ru": "☀️ «Каждое утро — это шанс начать заново.» — Неизвестный автор", "en": "☀️ 'Every morning is a chance to begin again.' — Unknown"},
-        {"ru": "🌅 «Не жди подходящего момента — создавай его.» — Джордж Бернард Шоу", "en": "🌅 'Don't wait for the right moment. Create it.' — G.B. Shaw"},
-        {"ru": "✨ «Жизнь прекрасна. Просто иногда нужно напоминать себе об этом.»", "en": "✨ 'Life is beautiful. Sometimes you just need to remind yourself.' — Unknown"},
-        {"ru": "💪 «Успех — это сумма небольших усилий, повторяемых день за днём.» — Роберт Коллиер", "en": "💪 'Success is the sum of small efforts repeated day in and day out.' — Robert Collier"},
+# ── CONFIG ────────────────────────────────────────────────────────────────────
+BOT_TOKEN        = os.getenv("BOT_TOKEN", "")
+WEATHER_API_KEY  = os.getenv("WEATHER_API_KEY", "")
+DB_PATH          = "pogoda.db"
+ADMIN_ID         = int(os.getenv("ADMIN_ID", "7262437300"))
+TZ               = pytz.timezone("Europe/Chisinau")
+
+def now_local():
+    return datetime.now(TZ)
+
+# ── AFFILIATE ─────────────────────────────────────────────────────────────────
+AFF = {
+    "bolt":     {"ru": "🚗 Такси Bolt",           "en": "🚗 Bolt taxi",          "url": "BOLT_URL"},
+    "inDrive":  {"ru": "🚕 inDrive",               "en": "🚕 inDrive",            "url": "INDRIVE_URL"},
+    "wolt":     {"ru": "🍔 Доставка Wolt",         "en": "🍔 Wolt delivery",      "url": "WOLT_URL"},
+    "glovo":    {"ru": "🛵 Glovo",                 "en": "🛵 Glovo",              "url": "GLOVO_URL"},
+    "clothes":  {"ru": "👗 Одежда",                "en": "👗 Clothes",            "url": "CLOTHES_URL"},
+    "umbrella": {"ru": "☂️ Зонт (Alibaba)",        "en": "☂️ Umbrella (Alibaba)", "url": "https://rzekl.com/g/pm1aev55cl3fe1015811219aa26f6f/?ulp=https%3A%2F%2Fwww.alibaba.com%2Fproduct-detail%2FCustom-Wind-Resistant-Hands-Free-Inverse_1600478167223.html"},
+    "tickets":  {"ru": "✈️ Авиабилеты",            "en": "✈️ Flights",            "url": "https://tp.media/r?marker=736538&trs=536752&p=4114&u=https%3A%2F%2Faviasales.ru&campaign_id=100"},
+    "hotels":   {"ru": "🏨 Отели",                 "en": "🏨 Hotels",             "url": "HOTELS_URL"},
+    "bothub":   {"ru": "🤖 AI-ассистент BotHub",   "en": "🤖 AI Assistant BotHub","url": "https://bothub.chat/?invitedBy=zGQwEkF5uAu-92IxmDmZH"},
+}
+
+def real(url): return url.startswith("http")
+
+# ── WEATHER CODES ─────────────────────────────────────────────────────────────
+RAIN_C  = {1063,1150,1153,1180,1183,1186,1189,1192,1195,1240,1243,1246,1087,1273,1276,1279,1282}
+SNOW_C  = {1066,1114,1117,1210,1213,1216,1219,1222,1225,1255,1258,1069,1072,1168,1171,1198,1201,1204,1207,1249,1252}
+STORM_C = {1087,1273,1276,1279,1282}
+HSNOW_C = {1117,1225,1258}
+
+def wicon(code):
+    if code==1000: return "☀️"
+    if code in(1003,1006): return "⛅"
+    if code==1009: return "☁️"
+    if code in(1030,1135,1147): return "🌫"
+    if code in RAIN_C: return "🌧"
+    if code in SNOW_C: return "❄️"
+    if code in STORM_C: return "⛈"
+    return "🌤"
+
+# ── REPLY KEYBOARD ────────────────────────────────────────────────────────────
+def main_kb(lang: str) -> ReplyKeyboardMarkup:
+    b = ReplyKeyboardBuilder()
+    if lang == "ru":
+        b.button(text="🌤 Погода сейчас")
+        b.button(text="⏰ Время прогноза")
+        b.button(text="⚙️ Настройки")
+        b.button(text="🎲 Активность дня")
+        b.button(text="💬 Помощь")
+    else:
+        b.button(text="🌤 Weather now")
+        b.button(text="⏰ Forecast time")
+        b.button(text="⚙️ Settings")
+        b.button(text="🎲 Activity of the day")
+        b.button(text="💬 Help")
+    b.adjust(2, 2, 1)
+    return b.as_markup(resize_keyboard=True)
+
+def time_inline_kb(lang: str) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    for h in [6,7,8,9,10,11,12,14,16,18,20,22]:
+        b.button(text=f"🕐 {h:02d}:00", callback_data=f"time_{h}")
+    off = "🔕 Выключить" if lang=="ru" else "🔕 Turn off"
+    b.button(text=off, callback_data="time_off")
+    b.adjust(4, 4, 4, 1)
+    return b.as_markup()
+
+def format_inline_kb(lang: str) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    b.button(text="📅 "+("Сегодня" if lang=="ru" else "Today"),   callback_data="fmt_day")
+    b.button(text="📆 "+("Неделя"  if lang=="ru" else "Week"),    callback_data="fmt_week")
+    b.button(text="🗓 "+("Месяц"   if lang=="ru" else "Month"),   callback_data="fmt_month")
+    b.button(text="🌟 "+("Всё"     if lang=="ru" else "All"),     callback_data="fmt_all")
+    b.adjust(2)
+    return b.as_markup()
+
+def settings_inline_kb(lang: str) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    b.button(text="🏙 "+("Город"   if lang=="ru" else "City"),    callback_data="set_city")
+    b.button(text="📋 "+("Формат"  if lang=="ru" else "Format"),  callback_data="choose_format")
+    b.button(text="🌍 English" if lang=="ru" else "🇷🇺 Русский",  callback_data="toggle_lang")
+    b.adjust(2, 1)
+    return b.as_markup()
+
+# ── RANDOM ACTIVITY ───────────────────────────────────────────────────────────
+ACTIVITIES = {
+    "ru": [
+        "🎬 Посмотри фильм который давно откладывал — сегодня отличный день!",
+        "📚 Прочитай хотя бы 10 страниц книги — маленький шаг, большой прогресс.",
+        "🚶 Прогуляйся в парке хотя бы 20 минут — тело скажет спасибо.",
+        "☕ Зайди в новое кафе и попробуй что-то необычное.",
+        "📞 Позвони кому-то кому давно не звонил — это всегда приятно.",
+        "🎵 Послушай новый альбом или плейлист который давно хотел.",
+        "🍳 Приготовь блюдо которое раньше не пробовал готовить.",
+        "✍️ Запиши 3 вещи за которые благодарен сегодня.",
+        "🌿 Полей растения или купи один новый цветок домой.",
+        "🎨 Порисуй, даже если не умеешь — это расслабляет!",
+        "🏋️ Сделай 10 минут зарядки — лучше мало, чем ничего.",
+        "🛍 Сделай себе маленький подарок — ты это заслуживаешь!",
+        "🧹 Разбери один ящик или полку — сразу станет легче.",
+        "🌅 Встреть закат сегодня — просто выгляни в окно в нужный момент.",
+        "🎲 Сыграй в настольную игру с близкими или друзьями.",
     ],
-    "rain": [
-        {"ru": "🌈 «Жизнь — не в том, чтобы ждать пока пройдёт буря, а в том, чтобы учиться танцевать под дождём.» — Вивиан Грин", "en": "🌈 'Life isn't about waiting for the storm to pass — it's about learning to dance in the rain.' — V. Greene"},
-        {"ru": "💧 «Дождь смывает всё лишнее и оставляет только главное.»", "en": "💧 'Rain washes away everything unnecessary, leaving only what matters.' — Unknown"},
-    ],
-    "snow": [
-        {"ru": "❄️ «Зима — это когда земля отдыхает и набирается сил.»", "en": "❄️ 'Winter is when the earth rests and gathers strength.' — Unknown"},
-        {"ru": "🧣 «Холод снаружи — тепло внутри. Всё в твоих руках.»", "en": "🧣 'Cold outside, warmth within. It's all in your hands.' — Unknown"},
-    ],
-    "cloud": [
-        {"ru": "⛅ «Облака не могут скрыть солнце навсегда.»", "en": "⛅ 'Clouds cannot hide the sun forever.' — Unknown"},
-        {"ru": "💭 «Серый день — отличный фон для ярких мыслей.»", "en": "💭 'A grey day is a perfect backdrop for bright thoughts.' — Unknown"},
-    ],
-    "any": [
-        {"ru": "💡 «Маленький шаг каждый день — большой путь за год.»", "en": "💡 'A small step every day — a great journey in a year.' — Unknown"},
-        {"ru": "🎯 «Цель без плана — просто мечта.» — Антуан де Сент-Экзюпери", "en": "🎯 'A goal without a plan is just a wish.' — Antoine de Saint-Exupery"},
+    "en": [
+        "🎬 Watch a movie you've been putting off — today's a great day!",
+        "📚 Read at least 10 pages of a book — small step, big progress.",
+        "🚶 Take a 20-minute walk in the park — your body will thank you.",
+        "☕ Try a new café and order something unusual.",
+        "📞 Call someone you haven't spoken to in a while — it's always nice.",
+        "🎵 Listen to a new album or playlist you've been meaning to try.",
+        "🍳 Cook a dish you've never made before.",
+        "✍️ Write down 3 things you're grateful for today.",
+        "🌿 Water your plants or buy a new flower for your home.",
+        "🎨 Draw something — even if you can't draw, it's relaxing!",
+        "🏋️ Do 10 minutes of exercise — a little beats nothing.",
+        "🛍 Treat yourself to something small — you deserve it!",
+        "🧹 Sort through one drawer or shelf — you'll feel lighter.",
+        "🌅 Watch the sunset today — just look out the window at the right moment.",
+        "🎲 Play a board game with family or friends.",
     ]
 }
 
-SNOW_CODES_Q = {1066, 1114, 1117, 1210, 1213, 1216, 1219, 1222, 1225, 1255, 1258, 1069, 1072, 1168, 1171, 1198, 1201, 1204, 1207, 1249, 1252}
-RAIN_CODES_Q = {1063, 1150, 1153, 1180, 1183, 1186, 1189, 1192, 1195, 1240, 1243, 1246, 1087, 1273, 1276, 1279, 1282}
+# ── QUOTES ────────────────────────────────────────────────────────────────────
+QUOTES = {
+    "sun":   [
+        {"ru":"☀️ «Каждое утро — это шанс начать заново.»","en":"☀️ 'Every morning is a chance to begin again.'"},
+        {"ru":"🔥 «Единственный способ делать великое дело — любить то что делаешь.» — Стив Джобс","en":"🔥 'The only way to do great work is to love what you do.' — Steve Jobs"},
+        {"ru":"🚀 «Мечты не работают если не работаешь ты.» — Джон Максвелл","en":"🚀 'Dreams don't work unless you do.' — John C. Maxwell"},
+        {"ru":"💪 «Успех — сумма небольших усилий повторяемых день за днём.» — Роберт Коллиер","en":"💪 'Success is the sum of small efforts repeated day in and day out.' — R. Collier"},
+    ],
+    "rain":  [
+        {"ru":"🌈 «Жизнь не в том чтобы ждать пока пройдёт буря а в том чтобы танцевать под дождём.»","en":"🌈 'Life isn't about waiting for the storm to pass — it's about dancing in the rain.'"},
+        {"ru":"☕ «Дождливый день — лучший повод для книги и горячего чая.»","en":"☕ 'A rainy day is a perfect excuse for a good book and hot tea.'"},
+        {"ru":"💧 «Дождь смывает всё лишнее и оставляет только главное.»","en":"💧 'Rain washes away everything unnecessary, leaving only what matters.'"},
+    ],
+    "snow":  [
+        {"ru":"❄️ «Самые тёплые воспоминания рождаются в самые холодные дни.»","en":"❄️ 'The warmest memories are born on the coldest days.'"},
+        {"ru":"🧣 «Холод снаружи — тепло внутри. Всё в твоих руках.»","en":"🧣 'Cold outside, warmth within. It's all in your hands.'"},
+    ],
+    "any":   [
+        {"ru":"🎯 «Цель без плана — просто мечта.» — Антуан де Сент-Экзюпери","en":"🎯 'A goal without a plan is just a wish.' — Antoine de Saint-Exupery"},
+        {"ru":"❤️ «Будь собой — все остальные роли уже заняты.» — Оскар Уайльд","en":"❤️ 'Be yourself — everyone else is already taken.' — Oscar Wilde"},
+        {"ru":"🌍 «Путешествие в тысячу миль начинается с одного шага.» — Лао-цзы","en":"🌍 'A journey of a thousand miles begins with a single step.' — Lao Tzu"},
+        {"ru":"🏆 «Победитель — это мечтатель который не сдался.» — Нельсон Мандела","en":"🏆 'A winner is a dreamer who never gives up.' — Nelson Mandela"},
+        {"ru":"🎨 «Творчество — это интеллект который развлекается.» — Альберт Эйнштейн","en":"🎨 'Creativity is intelligence having fun.' — Albert Einstein"},
+    ]
+}
 
-def get_quote(condition_code: int, lang: str) -> str:
-    if condition_code in RAIN_CODES_Q: pool = QUOTES["rain"] + QUOTES["any"]
-    elif condition_code in SNOW_CODES_Q: pool = QUOTES["snow"] + QUOTES["any"]
-    elif condition_code == 1000: pool = QUOTES["sun"] + QUOTES["any"]
-    elif condition_code in (1003, 1006, 1009, 1030, 1135, 1147): pool = QUOTES["cloud"] + QUOTES["any"]
+def get_quote(code, lang):
+    if code in RAIN_C: pool = QUOTES["rain"] + QUOTES["any"]
+    elif code in SNOW_C: pool = QUOTES["snow"] + QUOTES["any"]
+    elif code == 1000: pool = QUOTES["sun"] + QUOTES["any"]
     else: pool = QUOTES["any"]
     return random.choice(pool)[lang]
 
-# ── CONFIG ───────────────────────────────────────────────────────────────────
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8914713512:AAFQQcVEzgL6M-u4yX3kANLHNakIiRWjyBU")
-WEATHER_API_KEY = os.getenv("WEATHER_API_KEY", "ade7a2b019c6498a8da62549260506")
-DB_PATH = "pogoda.db"
-ADMIN_ID = int(os.getenv("ADMIN_ID", "7262437300"))
-DEVELOPER_USERNAME = "@BohdanViktorovich1"  # 👈 Впиши сюда свой юзернейм телеграма без пробелов
-
-# ── AFFILIATE LINKS ──────────────────────────────────────────────────────────
-AFFILIATE = {
-    "bolt":       {"ru": "🚗 Заказать такси Bolt",        "en": "🚗 Order Bolt taxi",         "url": "ВСТАВЬ_ССЫЛКУ_BOLT"},
-    "inDrive":    {"ru": "🚕 Заказать inDrive",            "en": "🚕 Order inDrive",           "url": "ВСТАВЬ_ССЫЛКУ_INDRIVE"},
-    "wolt":       {"ru": "🍔 Доставка еды Wolt",           "en": "🍔 Food delivery Wolt",      "url": "ВСТАВЬ_ССЫЛКУ_WOLT"},
-    "glovo":      {"ru": "🛵 Доставка Glovo",              "en": "🛵 Glovo delivery",          "url": "ВСТАВЬ_ССЫЛКУ_GLOVO"},
-    "clothes":    {"ru": "👗 Одежда по погоде",            "en": "👗 Clothes for weather",     "url": "ВСТАВЬ_ССЫЛКУ_ОДЕЖДА"},
-    "tickets":    {"ru": "✈️ Авиабилеты — Aviasales",         "en": "✈️ Cheap flights — Aviasales",           "url": "https://tp.media/r?marker=736538&trs=536752&p=4114&u=https%3A%2F%2Faviasales.ru&campaign_id=100"},
-    "hotels":     {"ru": "🏨 Найти отель",                 "en": "🏨 Find a hotel",            "url": "ВСТАВЬ_ССЫЛКУ_BOOKING"},
-    "bothub":     {"ru": "🤖 AI Ассистент — BotHub",        "en": "🤖 AI Assistant — BotHub",  "url": "https://bothub.chat/?invitedBy=zGQwEkF5uAu-92IxmDmZH"},
-    "umbrella":   {"ru": "☂️ Зонт от дождя (Alibaba)",           "en": "☂️ Rain umbrella (Alibaba)",         "url": "https://rzekl.com/g/pm1aev55cl3fe1015811219aa26f6f/?ulp=https%3A%2F%2Fwww.alibaba.com%2Fproduct-detail%2FCustom-Wind-Resistant-Hands-Free-Inverse_1600478167223.html"},
-    "warm":       {"ru": "🧥 Тёплая одежда",              "en": "🧥 Warm clothes",            "url": "ВСТАВЬ_ССЫЛКУ_ТЁПЛОЕ"},
-}
-
-# ── WEATHER MOOD & LOGIC ─────────────────────────────────────────────────────
-SNOW_CODES = {1066, 1114, 1117, 1210, 1213, 1216, 1219, 1222, 1225, 1255, 1258, 1069, 1072, 1168, 1171, 1198, 1201, 1204, 1207, 1249, 1252}
-RAIN_CODES = {1063, 1150, 1153, 1180, 1183, 1186, 1189, 1192, 1195, 1240, 1243, 1246, 1087, 1273, 1276, 1279, 1282}
-STORM_CODES = {1087, 1273, 1276, 1279, 1282}
-
-def get_mood(code: int, temp: float, lang: str) -> str:
-    is_snow = code in SNOW_CODES and temp <= 4
-    is_rain = code in RAIN_CODES
-    is_storm = code in STORM_CODES
-    is_fog = code in (1030, 1135, 1147)
-
-    if lang == "ru":
-        if is_storm: return "⛈ <i>Гроза! Лучше остаться дома — безопасность прежде всего.</i>"
-        elif is_snow: return "❄️ <i>Снег за окном — укутайся потеплее, и пусть этот день будет уютным!</i>"
-        elif is_rain: return "🌧 <i>Дождливый день — идеально для чашки чая, любимой книги или сериала дома.</i>"
-        elif is_fog: return "🌫 <i>Туман на улице — будь осторожен на дороге и не торопись.</i>"
-        elif temp >= 30: return "🥵 <i>Жра! Пей больше воды, носи лёгкую одежду и береги себя.</i>"
-        elif temp >= 20: return "☀️ <i>Отличный день для прогулки — солнце и тепло зовут на улицу!</i>"
-        elif temp >= 10: return "🌤 <i>Приятная погода — свежий воздух. Идеально для активного дня!</i>"
-        elif temp >= 0: return "🧣 <i>Прохладно — одевайся потеплее и наслаждайся днём!</i>"
-        else: return "🥶 <i>Очень холодно! Одевайся по-зимнему и не забудь перчатки.</i>"
+# ── WARDROBE ──────────────────────────────────────────────────────────────────
+def get_wardrobe(temp, code, lang):
+    rain = code in RAIN_C
+    ru = lang == "ru"
+    umbrella = (" + зонт ☂️" if ru else " + umbrella ☂️") if rain else ""
+    if temp < -10:
+        return ("🧥 <b>Гардероб:</b> Пуховик, термобельё, шапка, перчатки" if ru
+                else "🧥 <b>Wardrobe:</b> Down coat, thermals, hat, gloves")
+    elif temp < 0:
+        return ("🧣 <b>Гардероб:</b> Зимнее пальто, шарф, шапка, перчатки" if ru
+                else "🧣 <b>Wardrobe:</b> Winter coat, scarf, hat, gloves")
+    elif temp < 5:
+        return f"🧤 <b>{'Гардероб' if ru else 'Wardrobe'}:</b> {'Тёплая куртка, свитер, шарф' if ru else 'Warm jacket, sweater, scarf'}{umbrella}"
+    elif temp < 10:
+        return f"🧥 <b>{'Гардероб' if ru else 'Wardrobe'}:</b> {'Куртка или пальто' if ru else 'Jacket or coat'}{umbrella}"
+    elif temp < 15:
+        return f"👔 <b>{'Гардероб' if ru else 'Wardrobe'}:</b> {'Лёгкая куртка или толстовка' if ru else 'Light jacket or hoodie'}{umbrella}"
+    elif temp < 20:
+        return f"👗 <b>{'Гардероб' if ru else 'Wardrobe'}:</b> {'Кофта или лёгкий джемпер' if ru else 'Sweater or light top'}{umbrella}"
+    elif temp < 28:
+        return f"👕 <b>{'Гардероб' if ru else 'Wardrobe'}:</b> {'Футболка, лёгкие брюки' if ru else 'T-shirt, light pants'}{umbrella}"
     else:
-        if is_storm: return "⛈ <i>Thunderstorm! Better stay home — safety first.</i>"
-        elif is_snow: return "❄️ <i>Snow outside — wrap up warm and make it a cozy day!</i>"
-        elif is_rain: return "🌧 <i>Rainy day — perfect for a cup of tea or a good book at home.</i>"
-        elif is_fog: return "🌫 <i>Foggy outside — be careful on the road and take it slow.</i>"
-        elif temp >= 30: return "🥵 <i>Heat wave! Drink plenty of water and stay safe.</i>"
-        elif temp >= 20: return "☀️ <i>Perfect day for a walk — sunshine and warmth await!</i>"
-        elif temp >= 10: return "🌤 <i>Pleasant weather — fresh air. Great for an active day!</i>"
-        elif temp >= 0: return "🧣 <i>Cool outside — dress warmly and enjoy the day!</i>"
-        else: return "🥶 <i>Freezing cold! Dress in winter gear and don't forget gloves.</i>"
+        return ("🩴 <b>Гардероб:</b> Лёгкая одежда, солнечные очки 😎, головной убор" if ru
+                else "🩴 <b>Wardrobe:</b> Light clothes, sunglasses 😎, hat")
 
-def get_wardrobe(temp: float, lang: str) -> str:
-    if lang == "ru":
-        if temp < 0: return "🧥 Пуховик, теплая шапка, шарф и перчатки."
-        elif temp < 10: return "🧥 Пальто или теплая куртка, легкий шарф."
-        elif temp < 20: return "🧥 Легкая куртка, худи или уютный свитер."
-        elif temp < 25: return "👕 Футболка, джинсы или легкие брюки."
-        else: return "🩳 Шорты/юбка, футболка, кепка и солнцезащитные очки 🕶."
+# ── ECO TIP ───────────────────────────────────────────────────────────────────
+def get_eco(code, temp, lang):
+    ru = lang == "ru"
+    if code == 1000 and temp >= 15:
+        return ("🌱 <i>Эко: Сегодня отлично пройтись пешком вместо авто — поможешь природе!</i>" if ru
+                else "🌱 <i>Eco: Great day to walk instead of drive — help the planet!</i>")
+    elif code in RAIN_C:
+        return ("🌱 <i>Эко: Собери дождевую воду для полива растений.</i>" if ru
+                else "🌱 <i>Eco: Collect rainwater for your plants!</i>")
+    elif temp >= 28:
+        return ("🌱 <i>Эко: Используй вентилятор вместо кондиционера — экономит 70% энергии.</i>" if ru
+                else "🌱 <i>Eco: Use a fan instead of AC — saves 70% energy.</i>")
+    elif temp < 0:
+        return ("🌱 <i>Эко: Убавь отопление на 1-2 градуса — незаметно тебе, ощутимо для планеты.</i>" if ru
+                else "🌱 <i>Eco: Lower heating by 1-2 degrees — small change, big impact.</i>")
     else:
-        if temp < 0: return "🧥 Winter coat, warm beanie, scarf, and gloves."
-        elif temp < 10: return "🧥 Coat or warm jacket, light scarf."
-        elif temp < 20: return "🧥 Light jacket, hoodie, or cozy sweater."
-        elif temp < 25: return "👕 T-shirt, jeans, or light pants."
-        else: return "🩳 Shorts/skirt, t-shirt, cap, and sunglasses 🕶."
+        return ("🌱 <i>Эко: Возьми многоразовую сумку вместо пластикового пакета.</i>" if ru
+                else "🌱 <i>Eco: Use a reusable bag instead of plastic today.</i>")
 
-def get_eco_advice(code: int, temp: float, lang: str) -> str:
-    is_rain = code in RAIN_CODES
-    if lang == "ru":
-        if is_rain: return "🌱 <i>Эко-совет: Соберите дождевую воду для полива домашних растений!</i>"
-        elif temp > 20: return "🌱 <i>Эко-совет: Отличный день, чтобы пройтись пешком или на велосипеде вместо поездки на авто.</i>"
-        else: return "🌱 <i>Эко-совет: Не забывайте выключать свет в пустых комнатах — берегите энергию.</i>"
-    else:
-        if is_rain: return "🌱 <i>Eco-advice: Collect rainwater to water your indoor plants!</i>"
-        elif temp > 20: return "🌱 <i>Eco-advice: Great day to walk or bike instead of driving.</i>"
-        else: return "🌱 <i>Eco-advice: Don't forget to turn off lights in empty rooms to save energy.</i>"
-
-def weather_icon(code: int) -> str:
-    if code == 1000: return "☀️"
-    if code in (1003, 1006): return "⛅"
-    if code in (1009,): return "☁️"
-    if code in (1030, 1135, 1147): return "🌫"
-    if code in (1063, 1150, 1153, 1180, 1183, 1186, 1189, 1192, 1195, 1240, 1243, 1246): return "🌧"
-    if code in (1066, 1114, 1117, 1210, 1213, 1216, 1219, 1222, 1225, 1255, 1258): return "❄️"
-    if code in (1069, 1072, 1168, 1171, 1198, 1201, 1204, 1207, 1249, 1252): return "🌨"
-    if code in (1087, 1273, 1276, 1279, 1282): return "⛈"
-    return "🌤"
-
-def _is_real_url(url: str) -> bool:
-    return url.startswith("http")
-
-def affiliate_block(condition_code: int, temp: float, lang: str) -> tuple[str, InlineKeyboardMarkup | None]:
-    sep = "\n━━━━━━━━━━━━━━━━"
-    builder = InlineKeyboardBuilder()
-    count = 0
-
-    if condition_code in RAIN_CODES:
-        text = sep + ("\n🚖 <b>Дождливый день — самое время остаться дома или уехать в тепло:</b>" if lang == "ru" else "\n🚖 <b>Rainy day — stay home or escape somewhere warm:</b>")
-        for key in ["bolt", "inDrive", "wolt", "glovo", "umbrella", "tickets"]:
-            if _is_real_url(AFFILIATE[key]["url"]):
-                builder.button(text=AFFILIATE[key][lang], url=AFFILIATE[key]["url"])
-                count += 1
-    elif condition_code in SNOW_CODES:
-        text = sep + ("\n🧥 <b>Холодно и снежно — одевайся теплее:</b>" if lang == "ru" else "\n🧥 <b>Cold and snowy — dress warm:</b>")
-        for key in ["bolt", "inDrive", "warm", "clothes"]:
-            if _is_real_url(AFFILIATE[key]["url"]):
-                builder.button(text=AFFILIATE[key][lang], url=AFFILIATE[key]["url"])
-                count += 1
-    else:
-        text = sep + ("\n✈️ <b>Погода и путешествия:</b>" if lang == "ru" else "\n✈️ <b>Weather & travel:</b>")
-        for key in ["tickets", "hotels", "clothes"]:
-            if _is_real_url(AFFILIATE[key]["url"]):
-                builder.button(text=AFFILIATE[key][lang], url=AFFILIATE[key]["url"])
-                count += 1
-
-    builder.button(text=AFFILIATE["bothub"][lang], url=AFFILIATE["bothub"]["url"])
-    
-    is_storm = condition_code in STORM_CODES
-    if is_storm or temp >= 35 or temp <= -15:
-        builder.button(text="🆘 " + ("Как пережить?", "How to survive?")[lang=="en"], callback_data="sos_alert")
-    
-    share_text = "Смотри какой крутой прогноз погоды! 🌤" if lang == "ru" else "Check out this cool weather forecast! 🌤"
-    share_url = f"https://t.me/share/url?url=https://t.me/pogoda_mood_bot&text={share_text}"
-    builder.button(text="↗️ " + ("Поделиться", "Share")[lang=="en"], url=share_url)
-
-    builder.adjust(2)
-    return text if count > 0 else "", builder.as_markup()
+# ── SOS ───────────────────────────────────────────────────────────────────────
+def get_sos(code, temp, lang):
+    ru = lang == "ru"
+    if code in STORM_C:
+        tips = ("⛈ <b>Советы при грозе:</b>\n⚡ Не стой под деревьями и у окон\n🚗 Не паркуй авто под деревьями\n🏠 Оставайся дома если возможно\n📱 Зарядите телефон заранее"
+                if ru else
+                "⛈ <b>Storm safety tips:</b>\n⚡ Stay away from trees and windows\n🚗 Don't park under trees\n🏠 Stay home if possible\n📱 Charge your phone now")
+        return True, tips, ("🆘 Советы при грозе" if ru else "🆘 Storm tips")
+    elif temp >= 35:
+        tips = ("🥵 <b>Советы при жаре:</b>\n💧 Пей 2-3 литра воды в день\n🕶 Носи головной убор и очки\n🏠 Избегай улицы с 12 до 16\n❄️ Охлаждай запястья холодной водой"
+                if ru else
+                "🥵 <b>Heat safety tips:</b>\n💧 Drink 2-3 liters of water daily\n🕶 Wear a hat and sunglasses\n🏠 Avoid going out 12:00–16:00\n❄️ Cool your wrists with cold water")
+        return True, tips, ("🆘 Советы при жаре" if ru else "🆘 Heat tips")
+    elif code in HSNOW_C or temp < -20:
+        tips = ("❄️ <b>Советы при сильном морозе:</b>\n🚗 Проверь аккумулятор и антифриз\n🧣 Закрой нос и рот шарфом\n⚠️ Осторожно на скользком тротуаре\n☕ Тёплые напитки каждые 1-2 часа"
+                if ru else
+                "❄️ <b>Frost safety tips:</b>\n🚗 Check battery and antifreeze\n🧣 Cover nose and mouth with scarf\n⚠️ Watch out for icy sidewalks\n☕ Drink warm drinks every 1-2 hours")
+        return True, tips, ("🆘 Советы при морозе" if ru else "🆘 Frost tips")
+    return False, "", ""
 
 # ── DATABASE ──────────────────────────────────────────────────────────────────
 async def init_db():
@@ -193,447 +239,525 @@ async def init_db():
         await db.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 user_id INTEGER PRIMARY KEY,
-                city TEXT,
-                lang TEXT DEFAULT 'ru',
+                city TEXT, lang TEXT DEFAULT 'ru',
                 forecast_format TEXT DEFAULT 'day',
-                active INTEGER DEFAULT 1
+                active INTEGER DEFAULT 1,
+                notify_hour INTEGER DEFAULT 7,
+                joined_at TEXT DEFAULT (datetime('now')),
+                last_active TEXT DEFAULT (datetime('now'))
             )
         """)
-        columns_to_add = [
-            "joined_at TEXT DEFAULT (datetime('now'))",
-            "last_active TEXT DEFAULT (datetime('now'))",
-            "tone TEXT DEFAULT 'friendly'",
-            "forecast_time TEXT DEFAULT '07:00'"
-        ]
-        for col_def in columns_to_add:
-            try: await db.execute(f"ALTER TABLE users ADD COLUMN {col_def}")
-            except Exception: pass
+        for col in ["notify_hour INTEGER DEFAULT 7",
+                    "joined_at TEXT DEFAULT (datetime('now'))",
+                    "last_active TEXT DEFAULT (datetime('now'))"]:
+            try: await db.execute(f"ALTER TABLE users ADD COLUMN {col}")
+            except: pass
         await db.commit()
 
-async def get_user(user_id: int):
+async def get_user(uid):
     async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute("SELECT user_id, city, lang, forecast_format, active, tone, forecast_time FROM users WHERE user_id = ?", (user_id,)) as cur:
-            row = await cur.fetchone()
+        async with db.execute("SELECT * FROM users WHERE user_id=?", (uid,)) as c:
+            row = await c.fetchone()
             if row:
-                return {"user_id": row[0], "city": row[1], "lang": row[2], "format": row[3], "active": row[4], "tone": row[5], "time": row[6]}
+                return {"user_id":row[0],"city":row[1],"lang":row[2],
+                        "format":row[3],"active":row[4],"notify_hour":row[5]}
     return None
 
-async def save_user(user_id: int, **kwargs):
+async def save_user(uid, **kw):
     async with aiosqlite.connect(DB_PATH) as db:
-        existing = await get_user(user_id)
-        if existing:
-            kwargs["last_active"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            sets = ", ".join(f"{k} = ?" for k in kwargs)
-            vals = list(kwargs.values()) + [user_id]
-            await db.execute(f"UPDATE users SET {sets} WHERE user_id = ?", vals)
+        ex = await get_user(uid)
+        kw["last_active"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        if ex:
+            sets = ", ".join(f"{k}=?" for k in kw)
+            await db.execute(f"UPDATE users SET {sets} WHERE user_id=?", [*kw.values(), uid])
         else:
             await db.execute(
-                "INSERT INTO users (user_id, city, lang, forecast_format, active, tone, forecast_time) VALUES (?, ?, ?, ?, 1, ?, '07:00')",
-                (user_id, kwargs.get("city"), kwargs.get("lang", "ru"), kwargs.get("forecast_format", "day"), kwargs.get("tone", "friendly"))
-            )
+                "INSERT INTO users (user_id,city,lang,forecast_format,active,notify_hour) VALUES (?,?,?,?,1,7)",
+                (uid, kw.get("city"), kw.get("lang","ru"), kw.get("forecast_format","day")))
         await db.commit()
 
-async def get_active_users_for_time(time_str: str):
+async def get_all_active():
     async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute("SELECT user_id, city, lang, forecast_format, tone FROM users WHERE active = 1 AND city IS NOT NULL AND forecast_time = ?", (time_str,)) as cur:
-            return await cur.fetchall()
+        async with db.execute("SELECT user_id,city,lang,forecast_format FROM users WHERE active=1 AND city IS NOT NULL") as c:
+            return await c.fetchall()
 
-async def get_all_active_users():
+async def get_users_by_hour(hour):
     async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute("SELECT user_id, city, lang, forecast_format, tone FROM users WHERE active = 1 AND city IS NOT NULL") as cur:
-            return await cur.fetchall()
+        async with db.execute(
+            "SELECT user_id,city,lang,forecast_format FROM users WHERE active=1 AND city IS NOT NULL AND COALESCE(notify_hour,7)=?",
+            (hour,)) as c:
+            return await c.fetchall()
 
 # ── WEATHER API ───────────────────────────────────────────────────────────────
-async def fetch_weather(city: str, days: int = 7):
+async def fetch_weather(city, days=7):
     url = f"https://api.weatherapi.com/v1/forecast.json?key={WEATHER_API_KEY}&q={city}&days={days}&lang=ru&aqi=yes"
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession() as s:
         try:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                if resp.status != 200: return None
-                data = await resp.json()
+            async with s.get(url, timeout=aiohttp.ClientTimeout(total=10)) as r:
+                if r.status != 200: return None
+                data = await r.json()
                 return data if "location" in data else None
-        except Exception: return None
+        except: return None
 
-async def search_city(query: str):
-    url = f"https://api.weatherapi.com/v1/search.json?key={WEATHER_API_KEY}&q={query}"
-    async with aiohttp.ClientSession() as session:
+async def search_city(q):
+    url = f"https://api.weatherapi.com/v1/search.json?key={WEATHER_API_KEY}&q={q}"
+    async with aiohttp.ClientSession() as s:
         try:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                if resp.status == 200:
-                    results = await resp.json()
-                    return results[0]["name"] if results else None
-        except Exception: return None
+            async with s.get(url, timeout=aiohttp.ClientTimeout(total=10)) as r:
+                if r.status == 200:
+                    res = await r.json()
+                    return res[0]["name"] if res else None
+        except: return None
 
-# ── FORECAST FORMATTERS ───────────────────────────────────────────────────────
-CURRENCY_MAP = {
-    "United Kingdom": "GBP (£)", "USA": "USD ($)", "United States of America": "USD ($)",
-    "France": "EUR (€)", "Germany": "EUR (€)", "Italy": "EUR (€)", "Spain": "EUR (€)",
-    "Romania": "RON (lei)", "Moldova": "MDL (lei)", "Ukraine": "UAH (₴)",
-    "Poland": "PLN (zł)", "Turkey": "TRY (₺)", "Japan": "JPY (¥)", "China": "CNY (¥)"
-}
-
-def format_day_forecast(data: dict, lang: str, tone: str) -> str:
-    c = data["current"]
-    loc = data["location"]
-    icon = weather_icon(c["condition"]["code"])
-    temp = round(c["temp_c"])
-    feels = round(c["feelslike_c"])
-    desc = c["condition"]["text"]
-    humidity = c["humidity"]
-    wind = round(c["wind_kph"])
-    wind_dir = c.get("wind_dir", "")
+# ── FORMATTERS ────────────────────────────────────────────────────────────────
+def fmt_day(data, lang):
+    c = data["current"]; loc = data["location"]
+    code = c["condition"]["code"]; temp = round(c["temp_c"])
+    feels = round(c["feelslike_c"]); desc = c["condition"]["text"]
+    humidity = c["humidity"]; wind = round(c["wind_kph"])
+    wind_dir = c.get("wind_dir",""); vis = c.get("vis_km","—")
+    pressure = round(c.get("pressure_mb",0) * 0.750062)
+    uv = c.get("uv","—")
     today = data["forecast"]["forecastday"][0]["day"]
-    t_max = round(today["maxtemp_c"])
-    t_min = round(today["mintemp_c"])
-    rain_chance = today.get("daily_chance_of_rain", 0)
-    city_name = loc["name"]
-    country = loc["country"]
+    t_max = round(today["maxtemp_c"]); t_min = round(today["mintemp_c"])
+    rain_ch = today.get("daily_chance_of_rain",0)
+    city = loc["name"]; country = loc["country"]
+    icon = wicon(code)
 
-    if tone == 'strict':
-        if lang == "ru":
-            return f"{icon} <b>Погода — {city_name}, {country}</b>\n📅 {now_local().strftime('%d.%m.%Y')}\n\n🌡 <b>Температура:</b> {temp}°C (ощущается {feels}°C)\n📊 <b>Мин/Макс:</b> {t_min}°C / {t_max}°C\n🌥 <b>Состояние:</b> {desc}\n💧 <b>Влажность:</b> {humidity}%\n💨 <b>Ветер:</b> {wind} км/ч {wind_dir}\n🌂 <b>Осадки:</b> {rain_chance}%"
+    def uv_lbl(v, ru):
+        try: v2=float(v)
+        except: return str(v)
+        if ru:
+            if v2<=2: return f"{v} (Низкий)"
+            elif v2<=5: return f"{v} (Умеренный)"
+            elif v2<=7: return f"{v} (Высокий)"
+            else: return f"{v} (Очень высокий)"
         else:
-            return f"{icon} <b>Weather — {city_name}, {country}</b>\n📅 {now_local().strftime('%d.%m.%Y')}\n\n🌡 <b>Temperature:</b> {temp}°C (feels {feels}°C)\n📊 <b>Min/Max:</b> {t_min}°C / {t_max}°C\n🌥 <b>Condition:</b> {desc}\n💧 <b>Humidity:</b> {humidity}%\n💨 <b>Wind:</b> {wind} km/h {wind_dir}\n🌂 <b>Rain chance:</b> {rain_chance}%"
+            if v2<=2: return f"{v} (Low)"
+            elif v2<=5: return f"{v} (Moderate)"
+            elif v2<=7: return f"{v} (High)"
+            else: return f"{v} (Very High)"
 
-    mood = get_mood(c["condition"]["code"], temp, lang)
-    wardrobe = get_wardrobe(temp, lang)
-    eco = get_eco_advice(c["condition"]["code"], temp, lang)
-    currency_note = f"💱 <b>Местная валюта:</b> {CURRENCY_MAP[country]}\n" if country in CURRENCY_MAP and lang == "ru" else f"💱 <b>Local currency:</b> {CURRENCY_MAP[country]}\n" if country in CURRENCY_MAP else ""
+    mood_ru = {
+        "storm": "⛈ <i>Гроза! Лучше остаться дома — безопасность прежде всего.</i>",
+        "snow":  "❄️ <i>Снег за окном — укутайся потеплее и наслаждайся уютом!</i>",
+        "rain":  "🌧 <i>Дождливый день — идеально для чашки чая и любимой книги.</i>",
+        "fog":   "🌫 <i>Туман на улице — будь осторожен на дороге.</i>",
+        "hot":   "🥵 <i>Жара! Пей больше воды и носи лёгкую одежду.</i>",
+        "warm":  "☀️ <i>Отличный день для прогулки — солнце и тепло зовут на улицу!</i>",
+        "mild":  "🌤 <i>Приятная погода — свежий воздух и хорошее настроение!</i>",
+        "cool":  "🧣 <i>Прохладно — одевайся потеплее и наслаждайся днём!</i>",
+        "cold":  "🥶 <i>Очень холодно! Одевайся по-зимнему и не забудь перчатки.</i>",
+    }
+    mood_en = {
+        "storm": "⛈ <i>Thunderstorm! Better stay home — safety first.</i>",
+        "snow":  "❄️ <i>Snow outside — wrap up warm and enjoy the coziness!</i>",
+        "rain":  "🌧 <i>Rainy day — perfect for a cup of tea and a good book.</i>",
+        "fog":   "🌫 <i>Foggy outside — be careful on the road.</i>",
+        "hot":   "🥵 <i>Heat wave! Drink plenty of water and wear light clothes.</i>",
+        "warm":  "☀️ <i>Great day for a walk — sunshine and warmth await!</i>",
+        "mild":  "🌤 <i>Pleasant weather — fresh air and good mood!</i>",
+        "cool":  "🧣 <i>Cool outside — dress warmly and enjoy the day!</i>",
+        "cold":  "🥶 <i>Very cold! Dress in winter gear and don't forget gloves.</i>",
+    }
+    is_snow_and_cold = code in SNOW_C and temp <= 4
+    if code in STORM_C: mk = "storm"
+    elif is_snow_and_cold: mk = "snow"
+    elif code in RAIN_C: mk = "rain"
+    elif code in (1030,1135,1147): mk = "fog"
+    elif temp >= 30: mk = "hot"
+    elif temp >= 20: mk = "warm"
+    elif temp >= 10: mk = "mild"
+    elif temp >= 0: mk = "cool"
+    else: mk = "cold"
+
+    mood = mood_ru[mk] if lang=="ru" else mood_en[mk]
+    wardrobe = get_wardrobe(temp, code, lang)
+    eco = get_eco(code, temp, lang)
+    quote = get_quote(code, lang)
 
     if lang == "ru":
-        return f"{icon} <b>Погода — {city_name}, {country}</b>\n📅 {now_local().strftime('%d.%m.%Y, %A')}\n\n{mood}\n\n🌡 <b>Сейчас:</b> {temp}°C (ощущается {feels}°C)\n📊 <b>День/Ночь:</b> {t_max}°C / {t_min}°C\n🌥 <b>Состояние:</b> {desc}\n💧 <b>Влажность:</b> {humidity}%\n💨 <b>Ветер:</b> {wind} км/ч\n🌂 <b>Вероятность дождя:</b> {rain_chance}%\n\n👕 <b>Что надеть:</b> {wardrobe}\n{currency_note}\n{eco}\n\n💬 <i>{get_quote(c['condition']['code'], 'ru')}</i>"
+        return (f"{icon} <b>Погода — {city}, {country}</b>\n"
+                f"📅 {now_local().strftime('%d.%m.%Y, %A')}\n\n"
+                f"{mood}\n\n"
+                f"🌡 <b>Сейчас:</b> {temp}°C (ощущается {feels}°C)\n"
+                f"📊 <b>День/Ночь:</b> {t_max}°C / {t_min}°C\n"
+                f"🌥 <b>Состояние:</b> {desc}\n"
+                f"💧 <b>Влажность:</b> {humidity}%\n"
+                f"💨 <b>Ветер:</b> {wind} км/ч {wind_dir}\n"
+                f"🌂 <b>Вероятность дождя:</b> {rain_ch}%\n"
+                f"👁 <b>Видимость:</b> {vis} км\n"
+                f"🔵 <b>Давление:</b> {pressure} мм рт.ст.\n"
+                f"🌞 <b>УФ-индекс:</b> {uv_lbl(uv,'ru')}\n\n"
+                f"{wardrobe}\n\n"
+                f"{eco}\n\n"
+                f"💬 <i>{quote}</i>")
     else:
-        return f"{icon} <b>Weather — {city_name}, {country}</b>\n📅 {now_local().strftime('%d.%m.%Y, %A')}\n\n{mood}\n\n🌡 <b>Now:</b> {temp}°C (feels {feels}°C)\n📊 <b>Day/Night:</b> {t_max}°C / {t_min}°C\n🌥 <b>Condition:</b> {desc}\n💧 <b>Humidity:</b> {humidity}%\n💨 <b>Wind:</b> {wind} km/h\n🌂 <b>Rain chance:</b> {rain_chance}%\n\n👕 <b>What to wear:</b> {wardrobe}\n{currency_note}\n{eco}\n\n💬 <i>{get_quote(c['condition']['code'], 'en')}</i>"
+        return (f"{icon} <b>Weather — {city}, {country}</b>\n"
+                f"📅 {now_local().strftime('%d.%m.%Y, %A')}\n\n"
+                f"{mood}\n\n"
+                f"🌡 <b>Now:</b> {temp}°C (feels like {feels}°C)\n"
+                f"📊 <b>Day/Night:</b> {t_max}°C / {t_min}°C\n"
+                f"🌥 <b>Condition:</b> {desc}\n"
+                f"💧 <b>Humidity:</b> {humidity}%\n"
+                f"💨 <b>Wind:</b> {wind} km/h {wind_dir}\n"
+                f"🌂 <b>Rain chance:</b> {rain_ch}%\n"
+                f"👁 <b>Visibility:</b> {vis} km\n"
+                f"🔵 <b>Pressure:</b> {round(c.get('pressure_mb',0))} hPa\n"
+                f"🌞 <b>UV index:</b> {uv_lbl(uv,'en')}\n\n"
+                f"{wardrobe}\n\n"
+                f"{eco}\n\n"
+                f"💬 <i>{quote}</i>")
 
-def format_week_forecast(data: dict, lang: str) -> str:
-    days = data["forecast"]["forecastday"]
-    header = f"季 <b>{'Прогноз на неделю' if lang == 'ru' else 'Weekly forecast'} — {data['location']['name']}</b>\n\n"
-    lines = [header]
-    for d in days:
-        date_str = datetime.strptime(d["date"], "%Y-%m-%d").strftime("%d.%m")
-        icon = weather_icon(d["day"]["condition"]["code"])
-        lines.append(f"{icon} <b>{date_str}</b>: {round(d['day']['maxtemp_c'])}°/{round(d['day']['mintemp_c'])}° — {d['day']['condition']['text']}")
+def fmt_week(data, lang):
+    loc = data["location"]
+    hdr = f"📆 <b>{'Прогноз на неделю' if lang=='ru' else 'Weekly forecast'} — {loc['name']}, {loc['country']}</b>\n\n"
+    lines = [hdr]
+    for d in data["forecast"]["forecastday"]:
+        dt = datetime.strptime(d["date"],"%Y-%m-%d").strftime("%d.%m")
+        ico = wicon(d["day"]["condition"]["code"])
+        tmax = round(d["day"]["maxtemp_c"]); tmin = round(d["day"]["mintemp_c"])
+        desc = d["day"]["condition"]["text"]
+        rain = d["day"].get("daily_chance_of_rain",0)
+        lines.append(f"{ico} <b>{dt}</b>: {tmax}°/{tmin}° — {desc} 🌂{rain}%")
     return "\n".join(lines)
 
-def format_month_forecast(data: dict, lang: str) -> str:
-    days = data["forecast"]["forecastday"]
-    note = "⚠️ <i>Прогноз на месяц приблизительный</i>\n\n" if lang == "ru" else "⚠️ <i>Monthly forecast is approximate</i>\n\n"
-    header = f"🗓 <b>{'Прогноз на месяц' if lang == 'ru' else 'Monthly forecast'} — {data['location']['name']}</b>\n{note}"
-    lines = [header]
-    for d in days:
-        date_str = datetime.strptime(d["date"], "%Y-%m-%d").strftime("%d.%m")
-        lines.append(f"{weather_icon(d['day']['condition']['code'])} <b>{date_str}</b>: {round(d['day']['maxtemp_c'])}°/{round(d['day']['mintemp_c'])}°")
+def fmt_month(data, lang):
+    loc = data["location"]
+    note = ("⚠️ <i>Прогноз на месяц приблизительный</i>\n\n" if lang=="ru"
+            else "⚠️ <i>Monthly forecast is approximate</i>\n\n")
+    hdr = f"🗓 <b>{'Прогноз на месяц' if lang=='ru' else 'Monthly forecast'} — {loc['name']}, {loc['country']}</b>\n{note}"
+    lines = [hdr]
+    for d in data["forecast"]["forecastday"]:
+        dt = datetime.strptime(d["date"],"%Y-%m-%d").strftime("%d.%m")
+        ico = wicon(d["day"]["condition"]["code"])
+        lines.append(f"{ico} <b>{dt}</b>: {round(d['day']['maxtemp_c'])}°/{round(d['day']['mintemp_c'])}°")
     return "\n".join(lines)
 
-async def build_forecast_message(city: str, fmt: str, lang: str, tone: str = "friendly"):
-    days = 14 if fmt == "month" else 7
+def build_aff_kb(code, lang):
+    b = InlineKeyboardBuilder()
+    cnt = 0
+    if code in RAIN_C:
+        for k in ["bolt","inDrive","wolt","umbrella","tickets"]:
+            if real(AFF[k]["url"]): b.button(text=AFF[k][lang], url=AFF[k]["url"]); cnt+=1
+    elif code in SNOW_C:
+        for k in ["bolt","inDrive","tickets"]:
+            if real(AFF[k]["url"]): b.button(text=AFF[k][lang], url=AFF[k]["url"]); cnt+=1
+    elif code == 1000:
+        for k in ["glovo","clothes","tickets","hotels"]:
+            if real(AFF[k]["url"]): b.button(text=AFF[k][lang], url=AFF[k]["url"]); cnt+=1
+    else:
+        for k in ["tickets","hotels","clothes"]:
+            if real(AFF[k]["url"]): b.button(text=AFF[k][lang], url=AFF[k]["url"]); cnt+=1
+    b.button(text=AFF["bothub"][lang], url=AFF["bothub"]["url"]); cnt+=1
+    has_sos, _, sos_btn = get_sos(code, 0, lang)
+    if has_sos: b.button(text=sos_btn, callback_data=f"sos_{code}_0"); cnt+=1
+    b.adjust(2)
+    return b.as_markup() if cnt>0 else None
+
+async def build_msg(city, fmt, lang):
+    days = 14 if fmt=="month" else 7
     data = await fetch_weather(city, days)
     if not data: return None, None
-    condition_code = data["current"]["condition"]["code"]
-    temp = round(data["current"]["temp_c"])
-    
-    if fmt == "day": text = format_day_forecast(data, lang, tone)
-    elif fmt == "week": text = format_week_forecast(data, lang)
-    elif fmt == "month": text = format_month_forecast(data, lang)
-    else: text = format_day_forecast(data, lang, tone) + "\n\n" + format_week_forecast(data, lang)
-
-    aff_text, aff_kb = affiliate_block(condition_code, temp, lang)
-    text += aff_text
-    return text, aff_kb
-
-# ── KEYBOARDS ─────────────────────────────────────────────────────────────────
-def main_menu_kb(lang: str):
-    if lang == "ru":
-        kb = [
-            [KeyboardButton(text="🌤 Погода сейчас"), KeyboardButton(text="⏰ Время рассылки")],
-            [KeyboardButton(text="⚙️ Настройки"), KeyboardButton(text="💬 Помощь (Связаться)")]
-        ]
+    code = data["current"]["condition"]["code"]
+    temp = data["current"]["temp_c"]
+    if fmt=="day": text = fmt_day(data, lang)
+    elif fmt=="week": text = fmt_week(data, lang)
+    elif fmt=="month": text = fmt_month(data, lang)
+    else: text = fmt_day(data, lang)+"\n\n"+fmt_week(data, lang)
+    # SOS button based on real temp
+    b = InlineKeyboardBuilder()
+    cnt = 0
+    if code in RAIN_C:
+        for k in ["bolt","inDrive","wolt","umbrella","tickets"]:
+            if real(AFF[k]["url"]): b.button(text=AFF[k][lang], url=AFF[k]["url"]); cnt+=1
+    elif code in SNOW_C:
+        for k in ["bolt","inDrive","tickets"]:
+            if real(AFF[k]["url"]): b.button(text=AFF[k][lang], url=AFF[k]["url"]); cnt+=1
+    elif code == 1000:
+        for k in ["glovo","clothes","tickets","hotels"]:
+            if real(AFF[k]["url"]): b.button(text=AFF[k][lang], url=AFF[k]["url"]); cnt+=1
     else:
-        kb = [
-            [KeyboardButton(text="🌤 Weather now"), KeyboardButton(text="⏰ Forecast time")],
-            [KeyboardButton(text="⚙️ Settings"), KeyboardButton(text="💬 Help (Contact)")]
-        ]
-    return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
+        for k in ["tickets","hotels","clothes"]:
+            if real(AFF[k]["url"]): b.button(text=AFF[k][lang], url=AFF[k]["url"]); cnt+=1
+    b.button(text=AFF["bothub"][lang], url=AFF["bothub"]["url"]); cnt+=1
+    has_sos, _, sos_btn = get_sos(code, temp, lang)
+    if has_sos: b.button(text=sos_btn, callback_data=f"sos_{code}_{int(temp)}"); cnt+=1
+    b.adjust(2)
+    kb = b.as_markup() if cnt>0 else None
+    return text, kb
 
-def select_time_inline_kb(lang: str):
-    builder = InlineKeyboardBuilder()
-    times = ["06:00", "07:00", "08:00", "09:00", "10:00", "11:00"]
-    for t in times:
-        builder.button(text=t, callback_data=f"settime_{t}")
-    builder.button(text="❌ " + ("Отключить рассылку" if lang == "ru" else "Disable alerts"), callback_data="settime_disable")
-    builder.adjust(3, 3, 1)
-    return builder.as_markup()
-
-def start_kb(lang: str):
-    builder = InlineKeyboardBuilder()
-    builder.button(text="🏙 " + ("Указать город" if lang == "ru" else "Set city"), callback_data="set_city")
-    builder.button(text="🌍 English" if lang == "ru" else "🇷🇺 Русский", callback_data="toggle_lang")
-    builder.button(text="🎲 " + ("Чем заняться?" if lang == "ru" else "Lucky activity"), callback_data="lucky_activity")
-    builder.adjust(1)
-    return builder.as_markup()
-
-def format_kb(lang: str):
-    builder = InlineKeyboardBuilder()
-    builder.button(text="📅 " + ("Сегодня" if lang == "ru" else "Today"),    callback_data="fmt_day")
-    builder.button(text="📆 " + ("На неделю" if lang == "ru" else "Week"),   callback_data="fmt_week")
-    builder.button(text="🗓 " + ("На месяц" if lang == "ru" else "Month"),   callback_data="fmt_month")
-    builder.button(text="🌟 " + ("Всё сразу" if lang == "ru" else "All"),    callback_data="fmt_all")
-    builder.adjust(2)
-    return builder.as_markup()
-
-def settings_kb(lang: str, tone: str):
-    builder = InlineKeyboardBuilder()
-    builder.button(text="🏙 " + ("Изменить город" if lang == "ru" else "Change city"),  callback_data="set_city")
-    builder.button(text="📋 " + ("Формат" if lang == "ru" else "Format"),               callback_data="choose_format")
-    builder.button(text="🌍 English" if lang == "ru" else "🇷🇺 Русский",               callback_data="toggle_lang")
-    builder.button(text="🗣 " + ("Тон: Дружелюбный" if tone == "friendly" and lang == "ru" else "Тон: Строгий" if tone == "strict" and lang == "ru" else "Tone: Friendly" if tone == "friendly" else "Tone: Strict"), callback_data="toggle_tone")
-    builder.adjust(2)
-    return builder.as_markup()
-
-# ── TRANSLATIONS ─────────────────────────────────────────────────────────────
-T = {
-    "welcome": {
-        "ru": "👋 Привет! Я <b>PogodaMood</b> — твой личный синоптик с характером 🌤\n\nЯ буду присылать тебе утренний прогноз погоды в удобное время, с эко-советами и подсказками по гардеробу.\n\n👇 Начнем с выбора города:",
-        "en": "👋 Hello! I'm <b>PogodaMood</b> — your personal weather assistant with personality 🌤\n\n👇 Start by setting your city:",
-    },
-    "ask_city": {
-        "ru": "🏙 <b>Напиши название города:</b>\nНапример: <code>Кишинев</code> или <code>Москва</code>",
-        "en": "🏙 <b>Enter your city name:</b>\nFor example: <code>Chisinau</code> or <code>London</code>",
-    },
-    "city_saved": {
-        "ru": "✅ Город <b>{city}</b> сохранён!\n\n📋 Выбери формат отображения прогноза 👇",
-        "en": "✅ City <b>{city}</b> saved!\n\n📋 Choose your forecast format 👇",
-    },
-}
-
+# ── FSM ───────────────────────────────────────────────────────────────────────
 class CityForm(StatesGroup):
-    waiting_city = State()
+    waiting = State()
 
+# ── BOT ───────────────────────────────────────────────────────────────────────
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
-dp = Dispatcher(storage=MemoryStorage())
+dp  = Dispatcher(storage=MemoryStorage())
 
-# ── TEXT MENU HANDLERS (REPLY KEYBOARD) ───────────────────────────────────────
-@dp.message(F.text.in_(["🌤 Погода сейчас", "🌤 Weather now"]))
-async def menu_weather_now(msg: Message, state: FSMContext):
-    user = await get_user(msg.from_user.id)
-    lang = user["lang"] if user else "ru"
-    tone = user.get("tone", "friendly") if user else "friendly"
-    if not user or not user.get("city"):
-        await state.set_state(CityForm.waiting_city)
-        await msg.answer(T["ask_city"][lang])
-        return
-    wait_msg = await msg.answer("⏳ " + ("Загружаю прогноз..." if lang == "ru" else "Loading forecast..."))
-    text, kb = await build_forecast_message(user["city"], user.get("format", "day"), lang, tone)
-    await wait_msg.delete()
-    if text: await msg.answer(text, reply_markup=kb, disable_web_page_preview=True)
-
-@dp.message(F.text.in_(["⏰ Время рассылки", "⏰ Forecast time"]))
-async def menu_time_settings(msg: Message):
-    user = await get_user(msg.from_user.id)
-    lang = user["lang"] if user else "ru"
-    current_time = user.get("time", "07:00") if user else "07:00"
-    is_active = user.get("active", 1) if user else 1
-    
-    if is_active == 0:
-        status = "❌ Отключена" if lang == "ru" else "❌ Disabled"
-    else:
-        status = f"✅ Каждый день в {current_time}" if lang == "ru" else f"✅ Every day at {current_time}"
-        
-    txt = f"⏰ <b>Настройка времени рассылки</b>\n\nТекущий статус: <b>{status}</b>\n\nВыбери ниже время, когда тебе удобно получать утренний прогноз:" if lang == "ru" else f"⏰ <b>Forecast Time Settings</b>\n\nCurrent status: <b>{status}</b>\n\nSelect a convenient time below:"
-    await msg.answer(txt, reply_markup=select_time_inline_kb(lang))
-
-@dp.message(F.text.in_(["⚙️ Настройки", "⚙️ Settings"]))
-async def menu_settings(msg: Message):
-    user = await get_user(msg.from_user.id)
-    lang = user["lang"] if user else "ru"
-    tone = user.get("tone", "friendly") if user else "friendly"
-    city = user["city"] if user and user.get("city") else ("не указан" if lang == "ru" else "not set")
-    fmt_labels = {"day": "📅 Сегодня", "week": "季 Неделя", "month": "🗓 Месяц", "all": "🌟 Всё сразу"}
-    fmt = fmt_labels.get(user["format"] if user else "day", "—")
-    
-    text = (
-        f"⚙️ <b>Настройки профиля</b>\n\n🏙 Город: <b>{city}</b>\n📋 Формат: <b>{fmt}</b>\n🌐 Язык: <b>Русский 🇷🇺</b>\n🗣 Тон: <b>{'Дружелюбный 😇' if tone == 'friendly' else 'Строгий 👔'}</b>"
-    ) if lang == "ru" else (
-        f"⚙️ <b>Profile Settings</b>\n\n🏙 City: <b>{city}</b>\n📋 Format: <b>{user.get('format', 'day')}</b>\n🌐 Language: <b>English 🌍</b>\n🗣 Tone: <b>{tone}</b>"
-    )
-    await msg.answer(text, reply_markup=settings_kb(lang, tone))
-
-@dp.message(F.text.in_(["💬 Помощь (Связаться)", "💬 Help (Contact)"]))
-async def menu_help(msg: Message):
-    user = await get_user(msg.from_user.id)
-    lang = user["lang"] if user else "ru"
-    if lang == "ru":
-        text = f"💬 <b>Помощь и обратная связь</b>\n\nЕсли у тебя возникли проблемы с использованием бота, появились крутые идеи или ты хочешь оставить отзыв — пиши автору напрямую:\n👉 {DEVELOPER_USERNAME}\n\nМы всегда рады улучшать бота ради твоего комфорта! 😊"
-    else:
-        text = f"💬 <b>Help & Support</b>\n\nIf you have any issues using this bot, ideas, or recommendations, feel free to contact the author directly:\n👉 {DEVELOPER_USERNAME}"
-    await msg.answer(text)
-
-# ── COMMANDS (BACKWARD COMPATIBILITY) ─────────────────────────────────────────
+# ── HANDLERS ──────────────────────────────────────────────────────────────────
 @dp.message(CommandStart())
 async def cmd_start(msg: Message):
-    user = await get_user(msg.from_user.id)
-    lang = user["lang"] if user else "ru"
-    if not user: await save_user(msg.from_user.id, lang=lang)
-    await msg.answer(T["welcome"][lang], reply_markup=start_kb(lang))
+    u = await get_user(msg.from_user.id)
+    lang = u["lang"] if u else "ru"
+    if not u: await save_user(msg.from_user.id, lang=lang)
+    text = ("👋 Привет! Я <b>PogodaMood</b> — твой личный синоптик с характером 🌤\n\n"
+            "Каждый день буду присылать <b>настроение дня</b> — чтобы ты знал как одеться и чем заняться.\n\n"
+            "👇 Начни с кнопок ниже:" if lang=="ru" else
+            "👋 Hello! I'm <b>PogodaMood</b> — your personal weather assistant 🌤\n\n"
+            "Every day I'll send your <b>mood of the day</b> — so you know what to wear and do.\n\n"
+            "👇 Use the buttons below:")
+    await msg.answer(text, reply_markup=main_kb(lang))
 
-@dp.message(Command("weather"))
-async def cmd_weather_legacy(msg: Message, state: FSMContext):
-    await menu_weather_now(msg, state)
+@dp.message(Command("stats"))
+async def cmd_stats(msg: Message):
+    if msg.from_user.id != ADMIN_ID: return
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT COUNT(*) FROM users") as c: total=(await c.fetchone())[0]
+        async with db.execute("SELECT COUNT(*) FROM users WHERE active=1 AND city IS NOT NULL") as c: active=(await c.fetchone())[0]
+        async with db.execute("SELECT COUNT(*) FROM users WHERE city IS NULL") as c: no_city=(await c.fetchone())[0]
+        async with db.execute("SELECT COUNT(*) FROM users WHERE active=0") as c: unsub=(await c.fetchone())[0]
+        async with db.execute("SELECT lang,COUNT(*) FROM users GROUP BY lang") as c: langs=await c.fetchall()
+        async with db.execute("SELECT COUNT(*) FROM users WHERE DATE(joined_at)=DATE('now')") as c: today=(await c.fetchone())[0]
+        async with db.execute("SELECT COUNT(*) FROM users WHERE joined_at>=datetime('now','-7 days')") as c: week=(await c.fetchone())[0]
+        async with db.execute("SELECT COUNT(*) FROM users WHERE last_active>=datetime('now','-1 day')") as c: h24=(await c.fetchone())[0]
+        async with db.execute("SELECT city,COUNT(*) cnt FROM users WHERE city IS NOT NULL GROUP BY city ORDER BY cnt DESC LIMIT 5") as c: cities=await c.fetchall()
+    lang_str = " | ".join(f"{l}:{n}" for l,n in langs)
+    cities_str = "\n".join(f"  {i+1}. {city} — {n}" for i,(city,n) in enumerate(cities))
+    await msg.answer(
+        f"<b>Статистика @pogoda_mood_bot</b>\n🕐 {now_local().strftime('%d.%m.%Y %H:%M')}\n\n"
+        f"<b>Пользователи:</b>\n  Всего: <b>{total}</b>\n  Подписаны: <b>{active}</b>\n"
+        f"  Без города: <b>{no_city}</b>\n  Отписались: <b>{unsub}</b>\n\n"
+        f"<b>Прирост:</b>\n  Сегодня: <b>+{today}</b>\n  За 7 дней: <b>+{week}</b>\n  Активны 24ч: <b>{h24}</b>\n\n"
+        f"<b>Языки:</b> {lang_str}\n\n<b>Топ городов:</b>\n{cities_str}"
+    )
 
-@dp.message(Command("settings"))
-async def cmd_settings_legacy(msg: Message):
-    await menu_settings(msg)
+# ── REPLY KEYBOARD HANDLERS ───────────────────────────────────────────────────
+WEATHER_BTN = {"🌤 Погода сейчас", "🌤 Weather now"}
+TIME_BTN    = {"⏰ Время прогноза", "⏰ Forecast time"}
+SETTINGS_BTN= {"⚙️ Настройки",     "⚙️ Settings"}
+ACTIVITY_BTN= {"🎲 Активность дня","🎲 Activity of the day"}
+HELP_BTN    = {"💬 Помощь",        "💬 Help"}
 
-@dp.message(Command("help"))
-async def cmd_help_legacy(msg: Message):
-    await menu_help(msg)
+@dp.message(F.text.in_(WEATHER_BTN))
+async def btn_weather(msg: Message, state: FSMContext):
+    u = await get_user(msg.from_user.id)
+    lang = u["lang"] if u else "ru"
+    if not u or not u.get("city"):
+        await state.set_state(CityForm.waiting)
+        ask = ("🏙 Напиши название города (на русском или английском):\nПример: <code>Москва</code> или <code>Oslo</code>"
+               if lang=="ru" else
+               "🏙 Enter your city name:\nExample: <code>Moscow</code> or <code>Oslo</code>")
+        await msg.answer(ask)
+        return
+    wait = await msg.answer("⏳ "+("Загружаю..." if lang=="ru" else "Loading..."))
+    text, kb = await build_msg(u["city"], u.get("format","day"), lang)
+    await wait.delete()
+    if text: await msg.answer(text, reply_markup=kb, disable_web_page_preview=True)
+    else: await msg.answer("😔 "+("Не удалось получить данные. Попробуй позже." if lang=="ru" else "Couldn't get data. Try again later."))
 
-# ── FSM & CALLBACKS ───────────────────────────────────────────────────────────
-@dp.message(CityForm.waiting_city)
+@dp.message(F.text.in_(TIME_BTN))
+async def btn_time(msg: Message):
+    u = await get_user(msg.from_user.id)
+    lang = u["lang"] if u else "ru"
+    hour = u.get("notify_hour",7) if u else 7
+    text = (f"⏰ <b>Время рассылки</b>\n\nСейчас прогноз приходит в <b>{hour:02d}:00</b>\n\nВыбери удобное время:"
+            if lang=="ru" else
+            f"⏰ <b>Forecast time</b>\n\nCurrently sending at <b>{hour:02d}:00</b>\n\nChoose your time:")
+    await msg.answer(text, reply_markup=time_inline_kb(lang))
+
+@dp.message(F.text.in_(SETTINGS_BTN))
+async def btn_settings(msg: Message):
+    u = await get_user(msg.from_user.id)
+    lang = u["lang"] if u else "ru"
+    city = u["city"] if u and u.get("city") else ("не указан" if lang=="ru" else "not set")
+    hour = u.get("notify_hour",7) if u else 7
+    fmt_map = {"day":"📅","week":"📆","month":"🗓","all":"🌟"}
+    fmt = fmt_map.get(u["format"] if u else "day","📅")
+    text = (f"⚙️ <b>Настройки</b>\n\n🏙 Город: <b>{city}</b>\n{fmt} Формат: <b>{u['format'] if u else 'day'}</b>\n⏰ Время: <b>{hour:02d}:00</b>\n🌐 Язык: <b>Русский 🇷🇺</b>"
+            if lang=="ru" else
+            f"⚙️ <b>Settings</b>\n\n🏙 City: <b>{city}</b>\n{fmt} Format: <b>{u['format'] if u else 'day'}</b>\n⏰ Time: <b>{hour:02d}:00</b>\n🌐 Language: <b>English 🌍</b>")
+    await msg.answer(text, reply_markup=settings_inline_kb(lang))
+
+@dp.message(F.text.in_(ACTIVITY_BTN))
+async def btn_activity(msg: Message):
+    u = await get_user(msg.from_user.id)
+    lang = u["lang"] if u else "ru"
+    activity = random.choice(ACTIVITIES[lang])
+    prefix = "🎲 <b>Активность дня:</b>\n\n" if lang=="ru" else "🎲 <b>Activity of the day:</b>\n\n"
+    await msg.answer(prefix + activity)
+
+@dp.message(F.text.in_(HELP_BTN))
+async def btn_help(msg: Message):
+    u = await get_user(msg.from_user.id)
+    lang = u["lang"] if u else "ru"
+    hour = u.get("notify_hour",7) if u else 7
+    if lang == "ru":
+        text = (f"ℹ️ <b>PogodaMood — помощь</b>\n\n"
+                f"🌤 Присылаю прогноз с <b>настроением дня</b> каждый день в <b>{hour:02d}:00</b>\n\n"
+                f"<b>Кнопки меню:</b>\n"
+                f"🌤 Погода сейчас — прогноз на сейчас\n"
+                f"⏰ Время прогноза — выбрать время рассылки\n"
+                f"⚙️ Настройки — город, язык, формат\n"
+                f"🎲 Активность дня — идея чем заняться\n\n"
+                f"🌍 <b>Поддерживаю города всего мира</b>\n\n"
+                f"💬 <b>Вопросы и предложения:</b>\n@BohdanViktorovich1")
+    else:
+        text = (f"ℹ️ <b>PogodaMood — help</b>\n\n"
+                f"🌤 I send forecasts with a <b>mood of the day</b> every day at <b>{hour:02d}:00</b>\n\n"
+                f"<b>Menu buttons:</b>\n"
+                f"🌤 Weather now — current forecast\n"
+                f"⏰ Forecast time — choose send time\n"
+                f"⚙️ Settings — city, language, format\n"
+                f"🎲 Activity of the day — idea for your day\n\n"
+                f"🌍 <b>Supports cities worldwide</b>\n\n"
+                f"💬 <b>Questions & suggestions:</b>\n@BohdanViktorovich1")
+    await msg.answer(text)
+
+@dp.message(CityForm.waiting)
 async def process_city(msg: Message, state: FSMContext):
-    user = await get_user(msg.from_user.id)
-    lang = user["lang"] if user else "ru"
+    u = await get_user(msg.from_user.id)
+    lang = u["lang"] if u else "ru"
     city_input = msg.text.strip()
-    wait_msg = await msg.answer("🔍 ...")
-
+    wait = await msg.answer("🔍 "+("Ищу город..." if lang=="ru" else "Searching..."))
     data = await fetch_weather(city_input, 1)
     if not data:
-        found_name = await search_city(city_input)
-        if found_name: data = await fetch_weather(found_name, 1)
-
-    await wait_msg.delete()
+        found = await search_city(city_input)
+        if found: data = await fetch_weather(found, 1)
+    await wait.delete()
     if not data:
-        await msg.answer("🤔 Не могу найти этот город. Попробуй ещё раз." if lang == "ru" else "🤔 City not found. Try again.")
+        err = ("🤔 Не нашёл такой город. Попробуй на английском:\n<code>Oslo</code>, <code>Paris</code>, <code>New York</code>"
+               if lang=="ru" else
+               "🤔 City not found. Try in English:\n<code>Oslo</code>, <code>Paris</code>, <code>New York</code>")
+        await msg.answer(err)
         return
-
     city_name = data["location"]["name"]
+    country   = data["location"]["country"]
     await save_user(msg.from_user.id, city=city_name)
     await state.clear()
-    await msg.answer(T["city_saved"][lang].format(city=city_name), reply_markup=format_kb(lang))
+    saved = (f"✅ Город <b>{city_name}, {country}</b> сохранён!\n\nТеперь выбери формат прогноза 👇"
+             if lang=="ru" else
+             f"✅ City <b>{city_name}, {country}</b> saved!\n\nNow choose forecast format 👇")
+    await msg.answer(saved, reply_markup=format_inline_kb(lang))
 
-@dp.callback_query(F.data.startswith("settime_"))
-async def cb_set_time(call: CallbackQuery):
-    user = await get_user(call.from_user.id)
-    lang = user["lang"] if user else "ru"
-    chosen = call.data.replace("settime_", "")
-    
-    if chosen == "disable":
-        await save_user(call.from_user.id, active=0)
-        txt = "❌ Автоматическая рассылка прогноза отключена." if lang == "ru" else "❌ Automatic forecast disabled."
-    else:
-        await save_user(call.from_user.id, active=1, forecast_time=chosen)
-        txt = f"✅ Успешно! Буду присылать прогноз каждый день в <b>{chosen}</b> 🌅" if lang == "ru" else f"✅ Success! Forecast will be sent daily at <b>{chosen}</b> 🌅"
-        
-    await call.message.answer(txt, reply_markup=main_menu_kb(lang))
-    await call.answer()
-
+# ── INLINE CALLBACKS ──────────────────────────────────────────────────────────
 @dp.callback_query(F.data == "set_city")
 async def cb_set_city(call: CallbackQuery, state: FSMContext):
-    user = await get_user(call.from_user.id)
-    await state.set_state(CityForm.waiting_city)
-    await call.message.answer(T["ask_city"][user["lang"] if user else "ru"])
+    u = await get_user(call.from_user.id)
+    lang = u["lang"] if u else "ru"
+    await state.set_state(CityForm.waiting)
+    await call.message.answer("🏙 "+("Напиши название города:" if lang=="ru" else "Enter city name:"))
     await call.answer()
-
-@dp.callback_query(F.data == "toggle_lang")
-async def cb_toggle_lang(call: CallbackQuery):
-    user = await get_user(call.from_user.id)
-    new_lang = "en" if (user and user.get("lang") == "ru") else "ru"
-    await save_user(call.from_user.id, lang=new_lang)
-    await call.message.answer("Menu updated! / Меню обновлено!", reply_markup=main_menu_kb(new_lang))
-    await call.answer()
-
-@dp.callback_query(F.data == "toggle_tone")
-async def cb_toggle_tone(call: CallbackQuery):
-    user = await get_user(call.from_user.id)
-    if not user: return
-    new_tone = "strict" if user.get("tone") == "friendly" else "friendly"
-    await save_user(call.from_user.id, tone=new_tone)
-    await call.answer("Тон изменен!" if user["lang"] == "ru" else "Tone changed!")
-    # Перевызов настроек
-    class DummyMsg:
-        def __init__(self, c): self.from_user = c.from_user; self.answer = c.message.answer
-    await menu_settings(DummyMsg(call))
 
 @dp.callback_query(F.data == "choose_format")
 async def cb_choose_format(call: CallbackQuery):
-    user = await get_user(call.from_user.id)
-    await call.message.answer("📋 Выбери формат:" if user["lang"] == "ru" else "📋 Choose format:", reply_markup=format_kb(user["lang"]))
+    u = await get_user(call.from_user.id)
+    lang = u["lang"] if u else "ru"
+    await call.message.answer("📋 "+("Выбери формат:" if lang=="ru" else "Choose format:"), reply_markup=format_inline_kb(lang))
+    await call.answer()
+
+@dp.callback_query(F.data == "toggle_lang")
+async def cb_lang(call: CallbackQuery):
+    u = await get_user(call.from_user.id)
+    new_lang = "en" if (u and u.get("lang")=="ru") else "ru"
+    await save_user(call.from_user.id, lang=new_lang)
+    switched = ("✅ Язык изменён на Русский 🇷🇺" if new_lang=="ru" else "✅ Language changed to English 🌍")
+    await call.message.answer(switched, reply_markup=main_kb(new_lang))
     await call.answer()
 
 @dp.callback_query(F.data.startswith("fmt_"))
-async def cb_format_select(call: CallbackQuery):
-    fmt = call.data.replace("fmt_", "")
-    user = await get_user(call.from_user.id)
-    lang = user["lang"] if user else "ru"
+async def cb_fmt(call: CallbackQuery):
+    fmt = call.data.replace("fmt_","")
+    u = await get_user(call.from_user.id)
+    lang = u["lang"] if u else "ru"
     await save_user(call.from_user.id, forecast_format=fmt)
-    await call.message.answer("🎉 Формат сохранен! Настройки завершены.", reply_markup=main_menu_kb(lang))
+    hour = u.get("notify_hour",7) if u else 7
+    ok = (f"✅ Готово! Прогноз каждый день в <b>{hour:02d}:00</b> 🌅" if lang=="ru"
+          else f"✅ Done! Forecast every day at <b>{hour:02d}:00</b> 🌅")
+    await call.message.answer(ok, reply_markup=main_kb(lang))
     await call.answer()
 
-@dp.callback_query(F.data == "lucky_activity")
-async def cb_lucky_activity(call: CallbackQuery):
-    user = await get_user(call.from_user.id)
-    lang = user["lang"] if user else "ru"
-    acts = [
-        {"ru": "🍿 Отличный день для хорошего фильма дома или в кино!", "en": "🍿 Great day to watch a movie!"},
-        {"ru": "☕️ Зайди в любимую кофейню и порадуй себя вкусным напитком.", "en": "☕️ Visit your favorite coffee shop."},
-        {"ru": "🏃‍♂️ Время для прогулки на свежем воздухе или легкой тренировки.", "en": "🏃‍♂️ Great day for an outdoor walk."}
-    ]
-    await call.message.answer(f"🎲 {random.choice(acts)[lang]}")
+@dp.callback_query(F.data.startswith("time_"))
+async def cb_time(call: CallbackQuery):
+    u = await get_user(call.from_user.id)
+    lang = u["lang"] if u else "ru"
+    val = call.data.replace("time_","")
+    if val == "off":
+        await save_user(call.from_user.id, active=0)
+        txt = "🔕 Рассылка отключена. Можешь включить снова через ⏰ Время прогноза." if lang=="ru" else "🔕 Notifications turned off. You can re-enable via ⏰ Forecast time."
+    else:
+        hour = int(val)
+        await save_user(call.from_user.id, notify_hour=hour, active=1)
+        txt = (f"✅ Прогноз буду присылать каждый день в <b>{hour:02d}:00</b> 🌅" if lang=="ru"
+               else f"✅ I'll send your forecast every day at <b>{hour:02d}:00</b> 🌅")
+    await call.message.answer(txt, reply_markup=main_kb(lang))
     await call.answer()
 
-@dp.callback_query(F.data == "sos_alert")
-async def cb_sos_alert(call: CallbackQuery):
-    user = await get_user(call.from_user.id)
-    ru = "🆘 Защита при непогоде:\n1. Оставайтесь в помещении.\n2. Закройте окна.\n3. Держите телефон заряженным."
-    en = "🆘 Safety tips:\n1. Stay indoors.\n2. Keep windows closed.\n3. Keep your phone charged."
-    await call.answer(ru if user["lang"] == "ru" else en, show_alert=True)
+@dp.callback_query(F.data.startswith("sos_"))
+async def cb_sos(call: CallbackQuery):
+    u = await get_user(call.from_user.id)
+    lang = u["lang"] if u else "ru"
+    parts = call.data.split("_")
+    code = int(parts[1]); temp = float(parts[2])
+    _, tips, _ = get_sos(code, temp, lang)
+    if tips: await call.message.answer(tips)
+    await call.answer()
 
 # ── SCHEDULER ─────────────────────────────────────────────────────────────────
-async def send_personalized_forecasts():
-    """Срабатывает каждую минуту и рассылает прогнозы тем, чьё время совпало"""
-    current_time_str = now_local().strftime("%H:%M")
-    users = await get_active_users_for_time(current_time_str)
-    
-    for user_id, city, lang, fmt, tone in users:
+async def send_morning_forecasts():
+    current_hour = now_local().hour
+    users = await get_users_by_hour(current_hour)
+    for uid, city, lang, fmt in users:
         try:
-            text, kb = await build_forecast_message(city, fmt, lang, tone)
+            text, kb = await build_msg(city, fmt, lang)
             if text:
-                prefix = "🌅 <b>Доброе утро! Вот твой прогноз погоды:</b>\n\n" if lang == "ru" else "🌅 <b>Good morning! Here is your weather report:</b>\n\n"
-                await bot.send_message(user_id, prefix + text, reply_markup=kb, disable_web_page_preview=True)
+                prefix = "🌅 <b>Доброе утро! Вот твоё настроение дня:</b>\n\n" if lang=="ru" else "🌅 <b>Good morning! Here's your mood of the day:</b>\n\n"
+                await bot.send_message(uid, prefix+text, reply_markup=kb, disable_web_page_preview=True)
         except Exception as e:
-            logging.warning(f"Error sending periodic report to {user_id}: {e}")
+            logging.warning(f"Send failed {uid}: {e}")
 
-async def send_evening_warnings():
-    """Вечерняя умная проверка погоды (работает в 20:00)"""
-    users = await get_all_active_users()
-    for user_id, city, lang, fmt, tone in users:
+async def send_evening_alerts():
+    users = await get_all_active()
+    for uid, city, lang, fmt in users:
         try:
             data = await fetch_weather(city, 2)
             if not data or len(data["forecast"]["forecastday"]) < 2: continue
-            tomorrow = data["forecast"]["forecastday"][1]["day"]
-            code = tomorrow["condition"]["code"]
-            
-            msg = None
-            if code in SNOW_CODES:
-                msg = "❄️ Напоминание: Завтра ожидается снег. Оденьтесь теплее!" if lang == "ru" else "❄️ Reminder: Snow expected tomorrow. Dress warm!"
-            elif code in RAIN_CODES:
-                msg = "🌧 Напоминание: Завтра обещают дождь, не забудьте взять зонт!" if lang == "ru" else "🌧 Reminder: Rain expected tomorrow, don't forget an umbrella!"
-                
-            if msg: await bot.send_message(user_id, msg)
-        except Exception: pass
+            tom = data["forecast"]["forecastday"][1]["day"]
+            code = tom["condition"]["code"]
+            tmin = round(tom["mintemp_c"]); tmax = round(tom["maxtemp_c"])
+            wind = round(tom.get("maxwind_kph",0)); rain = tom.get("daily_chance_of_rain",0)
+            alert = None
+            ru = lang=="ru"
+            if code in STORM_C:
+                alert = ("⛈ <b>Завтра гроза!</b>\nЗарядите телефон заранее и возьмите зонт." if ru
+                         else "⛈ <b>Thunderstorm tomorrow!</b>\nCharge your phone and bring an umbrella.")
+            elif code in HSNOW_C or tmin < -10:
+                alert = (f"❄️ <b>Завтра сильный мороз ({tmin}°C)!</b>\nПодготовь машину и одевайся теплее." if ru
+                         else f"❄️ <b>Heavy frost tomorrow ({tmin}°C)!</b>\nPrepare your car and dress warm.")
+            elif tmax >= 35:
+                alert = (f"🥵 <b>Завтра аномальная жара ({tmax}°C)!</b>\nЗапаси воду, избегай улицы в полдень." if ru
+                         else f"🥵 <b>Extreme heat tomorrow ({tmax}°C)!</b>\nStock up on water, avoid noon sun.")
+            elif wind >= 60:
+                alert = (f"💨 <b>Завтра сильный ветер ({wind} км/ч)!</b>\nЗакрепи всё на балконе." if ru
+                         else f"💨 <b>Strong winds tomorrow ({wind} km/h)!</b>\nSecure items on your balcony.")
+            elif rain >= 80:
+                alert = ("🌧 <b>Завтра весь день дождь!</b>\nНе забудь зонт и непромокаемую обувь." if ru
+                         else "🌧 <b>Heavy rain all day tomorrow!</b>\nDon't forget umbrella and waterproof shoes.")
+            if alert:
+                prefix = "🌙 <b>Вечернее предупреждение:</b>\n\n" if ru else "🌙 <b>Evening alert:</b>\n\n"
+                await bot.send_message(uid, prefix+alert)
+        except Exception as e:
+            logging.warning(f"Evening alert failed {uid}: {e}")
 
-# ── MAIN RUNNER ───────────────────────────────────────────────────────────────
+# ── MAIN ──────────────────────────────────────────────────────────────────────
 async def main():
     logging.basicConfig(level=logging.INFO)
     await init_db()
-    
     scheduler = AsyncIOScheduler(timezone="Europe/Chisinau")
-    # Проверяем базу каждую минуту на соответствие кастомному времени
-    scheduler.add_job(send_personalized_forecasts, CronTrigger(minute="*"))
-    # Вечерние предупреждения остаются фиксированными в 20:00
-    scheduler.add_job(send_evening_warnings, CronTrigger(hour=20, minute=0))
+    scheduler.add_job(send_morning_forecasts, CronTrigger(minute=0))
+    scheduler.add_job(send_evening_alerts,    CronTrigger(hour=21, minute=0))
     scheduler.start()
-    
+    logging.info("✅ PogodaMood Bot started!")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
