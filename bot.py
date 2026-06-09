@@ -29,7 +29,7 @@ AFF = {
     "inDrive":  {"ru": "🚕 inDrive",               "en": "🚕 inDrive",            "url": "INDRIVE_URL"},
     "wolt":     {"ru": "🍔 Доставка Wolt",         "en": "🍔 Wolt delivery",      "url": "WOLT_URL"},
     "glovo":    {"ru": "🛵 Glovo",                 "en": "🛵 Glovo",              "url": "GLOVO_URL"},
-    "clothes":  {"ru": "👗 Одежда",                "en": "👗 Clothes",            "url": "CLOTHES_URL"},
+    "Kaspersky":  {"ru": "👗 Antivirus Kaspersky",                "en": "👗 Kaspersky",            "url": "https://fas.st/JTUcVI?erid=5jtCeReLm1S3Xx3LfA8QF84"},
     "umbrella": {"ru": "☂️ Зонт (Alibaba)",        "en": "☂️ Umbrella (Alibaba)", "url": "https://rzekl.com/g/pm1aev55cl3fe1015811219aa26f6f/?ulp=https%3A%2F%2Fwww.alibaba.com%2Fproduct-detail%2FCustom-Wind-Resistant-Hands-Free-Inverse_1600478167223.html"},
     "tickets":  {"ru": "✈️ Авиабилеты",            "en": "✈️ Flights",            "url": "https://tp.media/r?marker=736538&trs=536752&p=4114&u=https%3A%2F%2Faviasales.ru&campaign_id=100"},
     "hotels":   {"ru": "🏨 Отели",                 "en": "🏨 Hotels",             "url": "HOTELS_URL"},
