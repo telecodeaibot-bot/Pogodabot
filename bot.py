@@ -29,11 +29,13 @@ AFF = {
     "inDrive":  {"ru": "🚕 inDrive",               "en": "🚕 inDrive",            "url": "INDRIVE_URL"},
     "wolt":     {"ru": "🍔 Доставка Wolt",         "en": "🍔 Wolt delivery",      "url": "WOLT_URL"},
     "glovo":    {"ru": "🛵 Glovo",                 "en": "🛵 Glovo",              "url": "GLOVO_URL"},
+    "Kino":    {"ru": "🛵 KINO",                 "en": "🛵 KINO",              "url": "https://fas.st/1fOaV?erid=MvGzQC98w3Z1gMq1pRupbPDh"},
     "Kaspersky":  {"ru": "👗 Antivirus Kaspersky",                "en": "👗 Kaspersky",            "url": "https://fas.st/JTUcVI?erid=5jtCeReLm1S3Xx3LfA8QF84"},
-    "umbrella": {"ru": "☂️ Зонт (Alibaba)",        "en": "☂️ Umbrella (Alibaba)", "url": "https://rzekl.com/g/pm1aev55cl3fe1015811219aa26f6f/?ulp=https%3A%2F%2Fwww.alibaba.com%2Fproduct-detail%2FCustom-Wind-Resistant-Hands-Free-Inverse_1600478167223.html"},
-    "tickets":  {"ru": "✈️ Авиабилеты",            "en": "✈️ Flights",            "url": "https://tp.media/r?marker=736538&trs=536752&p=4114&u=https%3A%2F%2Faviasales.ru&campaign_id=100"},
-    "hotels":   {"ru": "🏨 Отели",                 "en": "🏨 Hotels",             "url": "HOTELS_URL"},
-    "bothub":   {"ru": "🤖 AI-ассистент BotHub",   "en": "🤖 AI Assistant BotHub","url": "https://bothub.chat/?invitedBy=zGQwEkF5uAu-92IxmDmZH"},
+    "Umbrella": {"ru": "☂️ Зонт (Alibaba)",        "en": "☂️ Umbrella (Alibaba)", "url": "https://rzekl.com/g/pm1aev55cl3fe1015811219aa26f6f/?ulp=https%3A%2F%2Fwww.alibaba.com%2Fproduct-detail%2FCustom-Wind-Resistant-Hands-Free-Inverse_1600478167223.html"},
+    "Aviasales":  {"ru": "✈️ Авиабилеты",            "en": "✈️ Flights",            "url": "https://tp.media/r?marker=736538&trs=536752&p=4114&u=https%3A%2F%2Faviasales.ru&campaign_id=100"},
+    "BotHub":   {"ru": "🤖 AI-ассистент BotHub",   "en": "🤖 AI Assistant BotHub","url": "https://bothub.chat/?invitedBy=zGQwEkF5uAu-92IxmDmZH"},
+    "OnlineMoney":    {"ru": "OnlineMoney",    "en": "OnlineMoney","url": "https://omg10.com/4/11107148"},
+    "Букоед книги":    {"ru": "Букоед",    "en": "Bukoed","url": "https://heqgr.com/g/531a4560a63fe101581127ad1bb5fb/?erid=5jtCeReLm1S3Xx3LfAELCUa&ulp=https%3A%2F%2Fwww.bookvoed.ru%2F"},
 }
 
 def real(url): return url.startswith("http")
@@ -653,7 +655,11 @@ async def cb_set_city(call: CallbackQuery, state: FSMContext):
 async def cb_choose_format(call: CallbackQuery):
     u = await get_user(call.from_user.id)
     lang = u["lang"] if u else "ru"
-    await call.message.answer("📋 "+("Выбери формат:" if lang=="ru" else "Choose format:"), reply_markup=format_inline_kb(lang))
+    text = "📋 <b>" + ("Выбери формат прогноза:" if lang=="ru" else "Choose forecast format:") + "</b>"
+    try:
+        await call.message.edit_text(text, reply_markup=format_inline_kb(lang))
+    except Exception:
+        await call.message.answer(text, reply_markup=format_inline_kb(lang))
     await call.answer()
 
 @dp.callback_query(F.data == "toggle_lang")
